@@ -1,0 +1,60 @@
+# THE entity ontology — imported by the graph projector, the playbook engine,
+# and replay. Playbook selectors (e.g. graph.service.http[...]) and the graph
+# agree because they read this one file. `natural_key` defines identity; the
+# id function hashes exactly these fields.
+
+kinds:
+  host:
+    natural_key: [addr]                 # IP or lowercased canonical FQDN (scope-checked)
+    attrs: [os, mac, hostname, distance]
+  service.tcp:
+    natural_key: [host, proto, port]
+    attrs: [product, version, cpe, banner, state]
+  service.http:
+    natural_key: [host, proto, port]
+    attrs: [scheme, vhost, server, tech, tls, title]
+  http.endpoint:
+    natural_key: [host, scheme, vhost, method, path]
+    attrs: [status, length, content_type, redirect]
+  http.param:
+    natural_key: [endpoint_id, location, name]   # location: query|body|header|cookie|path
+    attrs: [reflected, type, example]
+  credential:
+    natural_key: [type, username, realm]         # value stored hashed, never in the key
+    attrs: [value_sha, source, validated]
+  crypto.artifact:
+    natural_key: [id]
+    attrs: [n, e, c, encoding, entropy, ioc]
+  binary.elf:
+    natural_key: [sha256]
+    attrs: [arch, bits, pie, nx, canary, relro]
+  service.oracle:
+    natural_key: [endpoint, type]                # padding|encryption|mac|rng
+    attrs: [confirmed]
+  artifact:
+    natural_key: [sha256]                        # content-addressed REDACTED blob
+    attrs: [tool, mime, bytes, pinned]
+  finding:
+    natural_key: [finding_type, primary_entity_id, param]
+    attrs: [severity, cve, confidence]
+  hypothesis:
+    natural_key: [hid]
+    attrs: [statement, status, confidence]
+  attempt:
+    natural_key: [attempt_id]                    # never deduped (distinct actions)
+    attrs: [action, outcome]
+  flag:
+    natural_key: [value_sha]
+    attrs: [value, submitted, verified]
+
+relations:
+  - {src: host, rel: EXPOSES, dst: service.tcp}
+  - {src: service.http, rel: SERVES, dst: http.endpoint}
+  - {src: http.endpoint, rel: HAS_PARAM, dst: http.param}
+  - {src: credential, rel: AUTHENTICATES_TO, dst: service.http}
+  - {src: finding, rel: AFFECTS, dst: "*"}
+  - {src: finding, rel: EVIDENCED_BY, dst: artifact}
+  - {src: hypothesis, rel: ABOUT, dst: "*"}
+  - {src: attempt, rel: TESTS, dst: hypothesis}
+  - {src: attempt, rel: YIELDED, dst: "*"}
+  - {src: flag, rel: FOUND_ON, dst: host}
