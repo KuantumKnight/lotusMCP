@@ -27,6 +27,7 @@ from lotusmcp.kernel.events import (
     _now_iso,
     _ulid,
 )
+from lotusmcp.kernel.redaction import Redactor
 
 GENESIS_HASH = "sha256:" + "0" * 64
 _UNSIGNED = ("hash", "sig")
@@ -37,11 +38,17 @@ class ChainError(Exception):
 
 
 class EventStore:
-    def __init__(self, case_dir: str | os.PathLike) -> None:
+    def __init__(
+        self, case_dir: str | os.PathLike, redactor: Redactor | None = None
+    ) -> None:
         self.dir = Path(case_dir)
         self.dir.mkdir(parents=True, exist_ok=True)
         self.path = self.dir / "events.jsonl"
         self.idx = self.dir / "events.idx"
+        # Mandatory serializer choke: no payload reaches disk un-redacted.
+        # A secret-free payload is passed through unchanged, so hashes for
+        # clean events (and thus replay-equivalence) are unaffected.
+        self.redactor = redactor if redactor is not None else Redactor()
         self._lock = threading.Lock()
         self._seq, self._hash = self._load_tail()
 
@@ -61,6 +68,9 @@ class EventStore:
         draft.validate()
         with self._lock:
             seq = self._seq + 1
+            # Redact BEFORE hashing/writing so sha256(stored) stays valid and
+            # plaintext secrets never touch disk (ARCHITECTURE.md §Safety.4).
+            payload, detected = self.redactor.redact_payload(draft.payload)
             env: Dict[str, Any] = {
                 "seq": seq,
                 "event_id": _ulid(),
@@ -69,7 +79,7 @@ class EventStore:
                 "type": draft.type,
                 "schema_v": SCHEMA_V,
                 "actor": draft.actor,
-                "payload": draft.payload,
+                "payload": payload,
                 "prev_hash": self._hash,
             }
             for k in ("confidence", "idempotency_key", "causation_id",
@@ -77,8 +87,13 @@ class EventStore:
                 v = getattr(draft, k)
                 if v is not None:
                     env[k] = v
-            if draft.redactions:
-                env["redactions"] = draft.redactions
+            # Merge any redactions the caller already applied (e.g. the Executor
+            # tee) with those the choke detected; dedup by handle, stable order.
+            merged = {r["handle"]: r for r in (draft.redactions or [])}
+            for r in detected:
+                merged.setdefault(r["handle"], r)
+            if merged:
+                env["redactions"] = sorted(merged.values(), key=lambda r: r["handle"])
 
             if len(canonical_bytes(env["payload"])) > MAX_PAYLOAD_BYTES:
                 raise ValueError(

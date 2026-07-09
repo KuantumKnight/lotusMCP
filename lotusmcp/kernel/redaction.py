@@ -143,6 +143,10 @@ class Redactor:
             re.compile(flag_format) if flag_format else None
         )
 
+    def set_flag_format(self, flag_format: Optional[str]) -> None:
+        """(Re)bind the flag pattern — Case learns it after the store exists."""
+        self._flag_re = re.compile(flag_format) if flag_format else None
+
     def _is_flag(self, span: str) -> bool:
         return bool(self._flag_re and self._flag_re.fullmatch(span))
 
@@ -154,6 +158,32 @@ class Redactor:
         """
         if not isinstance(text, str) or not text:
             return text, []
+        # Carve out flag spans first so a secret-shaped substring *inside* a
+        # flag (e.g. flag{token=...}) is preserved verbatim, not just a flag
+        # that stands alone. Flag regions are never scanned by any detector.
+        if self._flag_re:
+            reds_all: Dict[str, str] = {}
+            pieces = []
+            pos = 0
+            for m in self._flag_re.finditer(text):
+                seg, seg_reds = self._redact_segment(text[pos:m.start()])
+                pieces.append(seg)
+                reds_all.update(seg_reds)
+                pieces.append(m.group(0))  # flag: verbatim
+                pos = m.end()
+            tail, tail_reds = self._redact_segment(text[pos:])
+            pieces.append(tail)
+            reds_all.update(tail_reds)
+            out = [{"handle": h, "kind": k} for h, k in reds_all.items()]
+            out.sort(key=lambda r: r["handle"])
+            return "".join(pieces), out
+        redacted, reds = self._redact_segment(text)
+        out = [{"handle": h, "kind": k} for h, k in reds.items()]
+        out.sort(key=lambda r: r["handle"])
+        return redacted, out
+
+    def _redact_segment(self, text: str) -> Tuple[str, Dict[str, str]]:
+        """Run every detector over a flag-free segment. Returns (text, handle->kind)."""
         redactions: Dict[str, str] = {}  # handle -> kind, dedup within one call
 
         for det in self.detectors:
@@ -179,10 +209,7 @@ class Redactor:
                 parts[i] = det.pattern.sub(_sub, parts[i])
             text = "".join(parts)
 
-        out = [{"handle": h, "kind": k} for h, k in redactions.items()]
-        # stable order for deterministic events
-        out.sort(key=lambda r: r["handle"])
-        return text, out
+        return text, redactions
 
     def redact_payload(self, payload: Any) -> Tuple[Any, List[Dict[str, str]]]:
         """Walk a JSON-ish structure, tokenizing every string value.

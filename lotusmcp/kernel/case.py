@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 from lotusmcp.kernel.events import EventDraft
 from lotusmcp.kernel.log import EventStore
 from lotusmcp.kernel.projector import GraphProjector
+from lotusmcp.kernel.redaction import Redactor
 from lotusmcp.kernel.state import render_state_md
 
 
@@ -25,9 +26,17 @@ class Case:
         self.dir.mkdir(parents=True, exist_ok=True)
         (self.dir / "projections").mkdir(exist_ok=True)
         (self.dir / "artifacts" / "blobs").mkdir(parents=True, exist_ok=True)
-        self.store = EventStore(self.dir)
         self.meta_path = self.dir / "case.json"
         self.scope_path = self.dir / "scope.json"
+        # One redactor per case so the flag (never redacted) and the reveal
+        # vault are case-scoped. flag_format may not exist yet on first create.
+        flag_format = None
+        if self.meta_path.exists():
+            flag_format = json.loads(
+                self.meta_path.read_text(encoding="utf-8")
+            ).get("flag_format")
+        self.redactor = Redactor(flag_format=flag_format)
+        self.store = EventStore(self.dir, redactor=self.redactor)
 
     # ---- metadata (small, mutable header; the log remains the truth) ----
     @property
@@ -50,6 +59,7 @@ class Case:
         c = cls(base_dir, case_id)
         c.set_meta(case_id=case_id, title=title, category=category,
                    flag_format=flag_format, platform=platform)
+        c.redactor.set_flag_format(flag_format)
         c.append(EventDraft(
             type="case.created",
             actor={"kind": "system", "name": "lotusmcp"},
