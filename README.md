@@ -51,6 +51,7 @@ the **standard library alone** (no Kali, no LLM, no external deps):
 | Single entity-id function + ontology (`ontology/`) | ✅ working |
 | Deterministic SQLite graph projector (`kernel/projector.py`) | ✅ working |
 | Bounded `STATE.md` working-set renderer (`kernel/state.py`) | ✅ working |
+| Redaction choke — deterministic secret tokenizer + reveal vault (`kernel/redaction.py`) | ✅ working (mandatory on the serializer) |
 | Read-only graph queries (`kb.py`) | ✅ working |
 | MCP facade: `create_case` / `get_state` / `kb_query` / `kb_get` (`server.py`) | ✅ working (needs `mcp` SDK) |
 | Replay-equivalence + tamper-detection tests | ✅ passing |
