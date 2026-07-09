@@ -1,0 +1,17 @@
+{
+  "_comment": "Operator-signed scope manifest. In production this is signed with an out-of-band ed25519 key (HSM/OS keystore) that is NEVER in the server request path. The server VERIFIES only. The autonomous agent may NARROW this scope but can never widen it, add an egress grant, or add a submit endpoint — those require a fresh operator signature.",
+  "case_id": "htb-titan-01",
+  "scope_version": 1,
+  "targets": [
+    { "kind": "cidr", "value": "10.10.11.0/24", "class": "lab" },
+    { "kind": "host", "value": "titan.htb", "pin": "10.10.11.53" }
+  ],
+  "egress_grants": [],
+  "submit_endpoints": [],
+  "flag_format": "HTB\\{[0-9a-f]{32}\\}",
+  "max_danger_tier": 2,
+  "escalation_policy": "ask_before_exploit",
+  "confirmed_by": "ramkiran@tristhaglobal.com",
+  "confirmed_at": "2026-07-09T00:00:00Z",
+  "sig": "ed25519:PLACEHOLDER_SIGN_WITH_operator_cli"
+}
