@@ -1,0 +1,37 @@
+[project]
+name = "lotusmcp"
+version = "0.0.1"
+description = "Autonomous CTF case-management MCP server bridging an LLM to Kali Linux"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    # Phase-0 kernel/projector/demo run on the stdlib alone.
+    # The MCP server facade needs the official SDK:
+    "mcp[cli]>=1.2.0",
+]
+
+[project.optional-dependencies]
+# Later phases (Executor / sandbox / playbooks). Kept out of the core install.
+full = [
+    "pydantic>=2.6",
+    "aiosqlite>=0.19",
+    "portalocker>=2.8",
+    "cryptography>=42.0",
+    "pyyaml>=6.0",
+    "jinja2>=3.1",
+]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+lotusmcp = "lotusmcp.server:mcp.run"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["lotusmcp"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

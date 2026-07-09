@@ -1,0 +1,22 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# Per-case runtime data — never commit case artifacts (may contain flags/secrets)
+cases/
+*.db
+*.db-wal
+*.db-shm
+
+# Control-plane private keys must NEVER be committed
+*.key
+*_ed25519
+secrets.enc
+
+# CTF_Guide is a separate repo (github.com/KuantumKnight/CTF_Guide), not vendored here
+CTF_Guide/
