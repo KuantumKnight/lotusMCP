@@ -18,6 +18,14 @@ from typing import Any, Callable, Dict, List, Optional
 from lotusmcp.engine.candidate import CandidateAction
 
 
+def _loads(s: Any) -> Dict[str, Any]:
+    try:
+        v = json.loads(s) if s else {}
+        return v if isinstance(v, dict) else {"value": v}
+    except (json.JSONDecodeError, TypeError):
+        return {}
+
+
 @dataclass(frozen=True)
 class Entity:
     id: str
@@ -32,16 +40,51 @@ class Entity:
         return self.attrs.get(name, default)
 
 
+@dataclass(frozen=True)
+class Finding:
+    id: str
+    ftype: str
+    confidence: float = 0.5
+    severity: str = "info"
+    corroboration: int = 1
+    subject: Dict[str, Any] = field(default_factory=dict)
+    attrs: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class Hypothesis:
+    hid: str
+    statement: str = ""
+    status: str = "OPEN"
+    confidence: float = 0.5
+
+
 class World:
-    def __init__(self, entities: List[Entity]) -> None:
+    def __init__(
+        self,
+        entities: List[Entity],
+        findings: Optional[List[Finding]] = None,
+        hypotheses: Optional[List[Hypothesis]] = None,
+    ) -> None:
         self._by_kind: Dict[str, List[Entity]] = {}
         self._by_id: Dict[str, Entity] = {}
+        self.findings: List[Finding] = findings or []
+        self.hypotheses: List[Hypothesis] = hypotheses or []
         for e in entities:
             self._by_kind.setdefault(e.kind, []).append(e)
             self._by_id[e.id] = e
 
     def entities(self, kind: str) -> List[Entity]:
         return list(self._by_kind.get(kind, ()))
+
+    def all(self) -> List[Entity]:
+        return list(self._by_id.values())
+
+    def signature(self) -> tuple:
+        """A cheap fold fingerprint — changes iff the graph learned something
+        (new entity, new/updated attribute, finding, or hypothesis)."""
+        attr_count = sum(len(e.attrs) for e in self._by_id.values())
+        return (len(self._by_id), attr_count, len(self.findings), len(self.hypotheses))
 
     def get(self, entity_id: str) -> Optional[Entity]:
         return self._by_id.get(entity_id)
@@ -54,7 +97,12 @@ class World:
 
     # ---- constructors ----
     @classmethod
-    def from_entity_dicts(cls, rows: List[Dict[str, Any]]) -> "World":
+    def from_entity_dicts(
+        cls,
+        rows: List[Dict[str, Any]],
+        findings: Optional[List[Dict[str, Any]]] = None,
+        hypotheses: Optional[List[Dict[str, Any]]] = None,
+    ) -> "World":
         """Build from lightweight dicts (tests / synthetic worlds)."""
         ents = []
         for r in rows:
@@ -67,7 +115,9 @@ class World:
                 attrs=r.get("attrs", {}),
                 edges=r.get("edges", {}),
             ))
-        return cls(ents)
+        fnds = [Finding(**f) for f in (findings or [])]
+        hyps = [Hypothesis(**h) for h in (hypotheses or [])]
+        return cls(ents, fnds, hyps)
 
     @classmethod
     def from_graph_db(cls, db_path: str) -> "World":
@@ -93,8 +143,24 @@ class World:
                 edges.setdefault(e["rel_type"], []).append(e["dst_id"])
             ents.append(Entity(eid, row["kind"], row["key_display"],
                                row["status"], row["confidence"], attrs, edges))
+
+        findings: List[Finding] = []
+        for f in conn.execute(
+            "SELECT id,ftype,subject_json,attrs_json,confidence,severity FROM finding"
+        ):
+            findings.append(Finding(
+                id=f["id"], ftype=f["ftype"],
+                confidence=f["confidence"] or 0.5, severity=f["severity"] or "info",
+                subject=_loads(f["subject_json"]), attrs=_loads(f["attrs_json"]),
+            ))
+        hyps: List[Hypothesis] = []
+        for h in conn.execute(
+            "SELECT hid,statement,status,confidence FROM hypothesis"
+        ):
+            hyps.append(Hypothesis(h["hid"], h["statement"] or "",
+                                   h["status"] or "OPEN", h["confidence"] or 0.5))
         conn.close()
-        return cls(ents)
+        return cls(ents, findings, hyps)
 
 
 # A predicate/param builder over one entity.

@@ -1,9 +1,8 @@
-"""OODA engine primitives. Phase 3 adds the full step() loop; the candidate
-model + playbook prior (U(A)) land first."""
-from lotusmcp.engine.candidate import PHASE_PAYOFF, PHASES, CandidateAction
-from lotusmcp.engine.selector import Selection, Scored, action_class, select
+"""OODA engine — candidate model, EV+UCB selection, budget, phase machine,
+progress tracking, and the step() loop.
 
-__all__ = [
-    "CandidateAction", "PHASES", "PHASE_PAYOFF",
-    "select", "Selection", "Scored", "action_class",
-]
+Import submodules directly (e.g. ``from lotusmcp.engine.loop import Loop``).
+This package ``__init__`` is intentionally import-free: ``playbooks.model``
+depends on ``engine.candidate``, so eager re-exports here would create an
+import cycle (engine -> loop -> selector -> playbooks -> engine).
+"""
