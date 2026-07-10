@@ -31,6 +31,19 @@ CASES_DIR.mkdir(parents=True, exist_ok=True)
 
 mcp = FastMCP("lotusmcp")
 
+# Regime-B interactive sessions are FULL-mode EXEC tools driving a persistent tube
+# in the sandbox. All orchestration + fail-closed policy lives in the testable
+# SessionService (no MCP dependency); here the tools only delegate. A production
+# launcher calls SESSIONS.configure(backend_factory) with the real tube + sandbox
+# runner — until then the tools refuse (fail closed).
+from lotusmcp.session.service import SessionService  # noqa: E402
+
+SESSIONS = SessionService(
+    CASES_DIR,
+    trusted_keys=[k.strip() for k in
+                  os.environ.get("LOTUS_TRUSTED_OP_KEYS", "").split(",") if k.strip()],
+)
+
 
 def _case(case_id: str) -> Case:
     return Case(CASES_DIR, case_id)
@@ -96,6 +109,32 @@ def flag_scan(case_id: str, text: str) -> dict:
         "recommendation": {"action": decision.action, "reason": decision.reason,
                            "flag": decision.flag.value if decision.flag else None},
     }
+
+
+@mcp.tool()
+def session_edit_run(case_id: str, script: str, sid: str = "",
+                     target_id: str = "", goal: str = "") -> dict:
+    """Regime B (FULL, exec): write/patch an exploit script and run it against a
+    persistent tube. Omit `sid` to open a new session bound to `target_id` (or the
+    primary in-scope entity); pass an existing `sid` to patch+re-run in the same
+    session (tube/session state preserved). Phase/plateau accounting is suspended
+    while a session is open; scope, budget and redaction are always enforced.
+    Fails closed if no sandbox backend is configured or the case has no
+    signature-verified scope."""
+    return SESSIONS.edit_run(case_id, script, sid=sid, target_id=target_id, goal=goal)
+
+
+@mcp.tool()
+def session_close(case_id: str, sid: str, reason: str = "closed by operator") -> dict:
+    """Close an open Regime-B session (releases the tube). Idempotent."""
+    return SESSIONS.close(case_id, sid, reason)
+
+
+@mcp.tool()
+def session_list(case_id: str) -> list:
+    """List this case's sessions (open and closed) with their target and revision
+    count — so the operator/agent can resume or close them."""
+    return SESSIONS.list(case_id)
 
 
 @mcp.resource("lotus://case/{case_id}/brief")
