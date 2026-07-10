@@ -53,9 +53,10 @@ the **standard library alone** (no Kali, no LLM, no external deps):
 | Bounded `STATE.md` working-set renderer (`kernel/state.py`) | ✅ working |
 | Redaction choke — deterministic secret tokenizer + reveal vault (`kernel/redaction.py`) | ✅ working (mandatory on the serializer) |
 | Read-only graph queries (`kb.py`) | ✅ working |
-| MCP facade: `create_case` / `get_state` / `kb_query` / `kb_get` (`server.py`) | ✅ working (needs `mcp` SDK) |
+| Flag subsystem — decode ladder, scanner, ranker + decoy filter, 4-tier registry, submit policy (`flag/`) | ✅ working |
+| MCP facade: `create_case` / `get_state` / `kb_query` / `kb_get` / `flag_scan` (`server.py`) | ✅ working (needs `mcp` SDK) |
 | Replay-equivalence + tamper-detection tests | ✅ passing |
-| Kali Executor, OODA loop, playbooks, flag engine | ⏳ Phases 1–8 (see roadmap) |
+| Kali Executor, OODA loop, playbooks | ⏳ Phases 1/3–8 (see roadmap) |
 
 ---
 
