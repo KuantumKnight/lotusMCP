@@ -17,7 +17,7 @@ import json
 import os
 import threading
 from pathlib import Path
-from typing import Any, Dict, Iterator
+from typing import Any, Dict, Iterator, Optional
 
 from lotusmcp.kernel.canonical import canonical, canonical_bytes
 from lotusmcp.kernel.events import (
@@ -145,3 +145,16 @@ class EventStore:
     @property
     def tip(self) -> int:
         return self._seq
+
+    @property
+    def tip_hash(self) -> str:
+        """The chain hash at the current tip (GENESIS_HASH on an empty log).
+        This is what a signed audit anchor pins."""
+        return self._hash
+
+    def hash_at(self, seq: int) -> Optional[str]:
+        """The recorded chain hash of event `seq`, or None if absent."""
+        for obj in self.iter_events():
+            if obj["seq"] == seq:
+                return obj["hash"]
+        return None
