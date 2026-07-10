@@ -56,9 +56,11 @@ the **standard library alone** (no Kali, no LLM, no external deps):
 | Flag subsystem — decode ladder, scanner, ranker + decoy filter, 4-tier registry, submit policy (`flag/`) | ✅ working |
 | Playbook engine — forward-chaining rules, `U(A)` scoring, dead-end/novelty/quota (`playbooks/`, `engine/`) | ✅ working (sole candidate generator) |
 | Triage ensemble — category classifier feeding `category_conf` (`triage/`) | ✅ working |
+| EV+UCB selector, budget ledger, phase machine (`engine/`) | ✅ working |
+| OODA `step()` loop — observe/orient/decide/act, Regime A (`engine/loop.py`) | ✅ working (executor/LLM injected) |
 | MCP facade: `create_case` / `get_state` / `kb_query` / `kb_get` / `flag_scan` (`server.py`) | ✅ working (needs `mcp` SDK) |
 | Replay-equivalence + tamper-detection tests | ✅ passing |
-| Kali Executor (sandbox), OODA `step()` loop, LLM gateway | ⏳ Phases 1/3–8 (see roadmap) |
+| Kali Executor (rootless-Podman sandbox), LLM gateway, Regime B | ⏳ Phases 1/4–8 (see roadmap) |
 
 ---
 
@@ -73,6 +75,11 @@ python -m lotusmcp.demo.seed_recon
 # 2. See the deterministic BRAIN decide — triage -> playbooks -> EV+UCB select.
 #    No Kali, no LLM: prints the action it would dispatch each phase, and why.
 python -m lotusmcp.demo.decide_loop
+
+# 2b. Watch a FULL autonomous solve drive the OODA loop end to end — a scripted
+#     executor stands in for Kali: TRIAGE -> RECON -> ENUMERATE -> EXPLOIT ->
+#     POST_EXPLOIT -> SOLVED_PENDING_SUBMIT -> FLAG_FOUND, flag captured.
+python -m lotusmcp.demo.autonomous_solve
 
 # 3. Run the determinism + tamper-evidence tests.
 python -m pytest tests/ -q          # or: PYTHONPATH=. python tests/test_replay_equivalence.py
