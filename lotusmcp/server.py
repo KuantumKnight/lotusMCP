@@ -202,6 +202,15 @@ def case_writeup(case_id: str) -> dict:
             "rejected": out["rejected"]}
 
 
+@mcp.tool()
+def case_metrics(case_id: str) -> str:
+    """OpenMetrics exposition for the case (events, entities, findings by
+    severity, hypotheses by status, dead ends, flags, current phase) — a pure
+    fold of the log/graph, safe to scrape into Prometheus/Grafana."""
+    from lotusmcp.observability import render_openmetrics
+    return render_openmetrics(_case(case_id))
+
+
 @mcp.resource("lotus://case/{case_id}/brief")
 def brief(case_id: str) -> str:
     """The bounded STATE.md working set as a subscribable resource."""
