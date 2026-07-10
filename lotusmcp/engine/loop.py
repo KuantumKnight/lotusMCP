@@ -17,6 +17,7 @@ never mutates state except by appending events.
 """
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Protocol, Set, Tuple
 
@@ -31,6 +32,7 @@ from lotusmcp.engine.progress import ProgressTracker
 from lotusmcp.engine.selector import action_class, select
 from lotusmcp.flag.facade import FlagEngine
 from lotusmcp.kernel.events import EventDraft
+from lotusmcp.llm.gateway import LLMGateway
 from lotusmcp.playbooks.engine import PlaybookEngine
 from lotusmcp.playbooks.model import World
 from lotusmcp.triage.classify import classify
@@ -78,6 +80,7 @@ class Loop:
         submit_oracle: Optional[Callable[[str], bool]] = None,
         scope_verified: bool = True,
         reachable: bool = True,
+        gateway: Optional[LLMGateway] = None,
     ) -> None:
         self.case = case
         self.executor = executor
@@ -85,6 +88,13 @@ class Loop:
         self.submit_oracle = submit_oracle
         self.scope_verified = scope_verified
         self.reachable = reachable
+        # Optional LLM gateway. When present it performs hypothesis abduction and
+        # charges its OWN token spend to the loop's ONE ledger (so the flat
+        # per-step notional charge below is skipped). When absent the loop stays
+        # fully deterministic with no LLM — which is what keeps it testable here.
+        self.gateway = gateway
+        if self.gateway is not None:
+            self.gateway.budget = self.budget
 
         self.playbook = PlaybookEngine()
         self.flag = FlagEngine(case)
@@ -163,6 +173,32 @@ class Loop:
             payload={"phase": new_phase, "reason": reason},
         ))
 
+    def _abduce_hypotheses(self, world: World) -> bool:
+        """ORIENT step (§4.1): the gateway abduces hypotheses from the current
+        findings; new ones (by statement) are appended as `hypothesis.proposed`
+        events. Returns True iff anything was appended. No-op without a gateway.
+        The gateway cache makes a repeat call over unchanged findings free."""
+        if self.gateway is None or not world.findings:
+            return False
+        findings = [{"id": f.id, "ftype": f.ftype, "confidence": f.confidence,
+                     "subject": f.subject} for f in world.findings]
+        resp = self.gateway.hypothesize(findings, phase=self.phase)
+        existing = {h.statement for h in world.hypotheses}
+        appended = False
+        for h in resp.get("new", []):
+            stmt = h["statement"]
+            if stmt in existing:
+                continue
+            hid = "H" + hashlib.blake2b(stmt.encode("utf-8"), digest_size=4).hexdigest()
+            self.case.append(EventDraft(
+                "hypothesis.proposed", {"kind": "llm", "name": "gateway"},
+                {"hid": hid, "statement": stmt, "status": "OPEN",
+                 "confidence": h["confidence"]},
+            ))
+            existing.add(stmt)
+            appended = True
+        return appended
+
     def _maybe_submit(self, world: World) -> None:
         """On entering SOLVED_PENDING_SUBMIT with an oracle wired, try to verify."""
         if self.phase != "SOLVED_PENDING_SUBMIT" or not self.submit_oracle:
@@ -179,6 +215,8 @@ class Loop:
         world = self._world()
 
         # ---- ORIENT ----
+        if self._abduce_hypotheses(world):
+            world = self._world()          # refold so signals see the new hypotheses
         tri = classify(self.case.meta, world)
         signals = self._signals(world)
         tr = check_transition(self.phase, signals)
@@ -214,8 +252,10 @@ class Loop:
         for d in drafts:
             self.case.append(d)
         self._scan_for_flags(drafts)
-        self.budget.charge(tool_invocations=1, llm_tokens=_LLM_TOKENS_PER_STEP,
-                           phase=self.phase)
+        # With a gateway, LLM spend is charged inside oracle() on cache miss; the
+        # flat notional charge is only for the gateway-less deterministic run.
+        llm_flat = 0 if self.gateway is not None else _LLM_TOKENS_PER_STEP
+        self.budget.charge(tool_invocations=1, llm_tokens=llm_flat, phase=self.phase)
         key = action.dedup_key()
         self.tried.add(key)
         self.n_class[action_class(action)] = self.n_class.get(action_class(action), 0) + 1
