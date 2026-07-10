@@ -29,6 +29,7 @@ from lotusmcp.engine.phases import (
     should_halt,
 )
 from lotusmcp.engine.progress import ProgressTracker
+from lotusmcp.engine.regime import is_interactive
 from lotusmcp.engine.scope import Scope, ScopeVerifier
 from lotusmcp.engine.selector import action_class, select
 from lotusmcp.flag.facade import FlagEngine
@@ -51,6 +52,17 @@ class Executor(Protocol):
     in tests/demo it's scripted."""
 
     def run(self, action: CandidateAction, case) -> List[EventDraft]: ...
+
+
+class SessionProvider(Protocol):
+    """Builds a Regime-B `InteractiveSession` for an in-scope target. Injected so
+    the loop needs no tube/model/sandbox to route to interactive code-synthesis;
+    in tests it wires a ScriptedTube + deterministic author/runner, in production
+    the real tube + gateway-backed author + sandbox runner. Returns an
+    un-opened session (the loop calls `.open()`/`.iterate()`)."""
+
+    def __call__(self, *, case, sid: str, entity: Dict, goal: str, flag,
+                 budget: BudgetLedger, scope, phase: str): ...
 
 
 @dataclass
@@ -83,6 +95,7 @@ class Loop:
         scope_verified: bool = True,
         reachable: bool = True,
         gateway: Optional[LLMGateway] = None,
+        session_provider: Optional[SessionProvider] = None,
     ) -> None:
         self.case = case
         self.executor = executor
@@ -105,6 +118,14 @@ class Loop:
         self.gateway = gateway
         if self.gateway is not None:
             self.gateway.budget = self.budget
+        # Regime-B seam. When present, EXPLOIT/POST_EXPLOIT on a code-synthesis
+        # category route to a persistent interactive session instead of the
+        # planner's DECIDE/ACT (phase/plateau accounting suspended while open).
+        # Absent (default) → the loop is the unchanged deterministic planner.
+        self.session_provider = session_provider
+        self._session = None
+        self._session_done: Set[str] = set()   # target ids no longer worth a session
+        self._session_seq = 0
 
         self.playbook = PlaybookEngine()
         self.flag = FlagEngine(case)
@@ -251,6 +272,78 @@ class Loop:
             if self.flag.submit(decision, self.submit_oracle):
                 self._set_phase("FLAG_FOUND", "platform oracle confirmed")
 
+    # ---------------------------------------------------------------- Regime B
+    # Entity kinds worth driving an exploit session against, best first.
+    _SESSION_TARGET_KINDS = ("binary", "artifact.binary", "service.tcp",
+                             "service.http", "service", "endpoint", "host")
+
+    def _pick_session_target(self, world: World) -> Optional[Dict]:
+        """Choose the in-scope entity to open an interactive session against.
+        Deterministic: best target-kind, then lexical id. Targets whose session
+        already finished (refused/capped/exhausted) are skipped so the loop never
+        re-opens a spent avenue. Returns None → let the planner handle this step."""
+        best = None
+        for e in world.all():
+            if e.id in self._session_done or e.status in ("retracted", "superseded"):
+                continue
+            rank = (self._SESSION_TARGET_KINDS.index(e.kind)
+                    if e.kind in self._SESSION_TARGET_KINDS
+                    else len(self._SESSION_TARGET_KINDS))
+            cand = (rank, e.id)
+            if best is None or cand < best[0]:
+                best = (cand, e)
+        if best is None:
+            return None
+        e = best[1]
+        tgt = e.target()
+        return {"id": e.id, "display": e.display,
+                "host": tgt.get("host"), "addr": tgt.get("addr"),
+                "port": tgt.get("port")}
+
+    def _session_goal(self) -> str:
+        cat = self.case.meta.get("category") or "target"
+        return f"capture the flag ({cat} exploit)"
+
+    def _interactive_step(self, world: World) -> Optional[StepResult]:
+        """One Regime-B iteration (§4.2): author → run vs tube → fold. Phase and
+        plateau accounting are suspended here. Returns None to fall through to the
+        planner when there is nothing in-scope to drive."""
+        if self._session is None or self._session.closed:
+            entity = self._pick_session_target(world)
+            if entity is None:
+                return None
+            self._session_seq += 1
+            self._session = self.session_provider(
+                case=self.case, sid=f"s{self._session_seq}", entity=entity,
+                goal=self._session_goal(), flag=self.flag, budget=self.budget,
+                scope=self.scope, phase=self.phase,
+            )
+            if not self._session.open():           # out of scope / refused
+                self._session_done.add(entity["id"])
+                self._session = None
+                return StepResult(self.phase, reason="interactive target refused",
+                                  budget=self.budget.snapshot())
+
+        target_id = self._session.entity.get("id")
+        res = self._session.iterate()
+        self.turn += 1
+
+        if res.flag_local_ok:
+            # a locally-valid flag from the exploit session IS the
+            # SOLVED_PENDING_SUBMIT condition (format match ∧ local check).
+            self._set_phase("SOLVED_PENDING_SUBMIT",
+                            "flag captured in interactive session")
+            self._maybe_submit(self._world())      # may promote to FLAG_FOUND
+            return StepResult(self.phase, progressed=True,
+                              reason="flag captured in interactive session",
+                              budget=self.budget.snapshot())
+        if res.closed:
+            self._session_done.add(target_id)       # avenue spent; don't re-open
+            self._all_exploit_dead = True
+        return StepResult(self.phase, progressed=res.ran,
+                          reason=res.reason or "interactive iteration",
+                          budget=self.budget.snapshot())
+
     def _scope_reason(self, action: CandidateAction, world: World) -> Optional[str]:
         """Per-action scope choke (§1, §2). Returns a refusal reason if the
         action's bound target is out of the verified scope, else None.
@@ -299,6 +392,16 @@ class Loop:
             self._set_phase("EXHAUSTED", "budget exhausted")
             return StepResult(self.phase, halted=True, reason="budget exhausted",
                               budget=self.budget.snapshot())
+
+        # ---- REGIME ROUTING (§4.2) ----
+        # In an exploit phase on a code-synthesis category, hand this step to a
+        # persistent interactive session instead of the planner. Falls through to
+        # DECIDE when there is no session provider or nothing in-scope to drive.
+        if self.session_provider is not None and \
+                is_interactive(self.phase, self.case.meta.get("category")):
+            r = self._interactive_step(world)
+            if r is not None:
+                return r
 
         # ---- DECIDE ----
         ps = self.playbook.propose(
