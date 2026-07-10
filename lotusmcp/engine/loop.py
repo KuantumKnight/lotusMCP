@@ -29,6 +29,7 @@ from lotusmcp.engine.phases import (
     should_halt,
 )
 from lotusmcp.engine.progress import ProgressTracker
+from lotusmcp.engine.scope import Scope, ScopeVerifier
 from lotusmcp.engine.selector import action_class, select
 from lotusmcp.flag.facade import FlagEngine
 from lotusmcp.kernel.events import EventDraft
@@ -78,6 +79,7 @@ class Loop:
         executor: Executor,
         budget: Optional[BudgetLedger] = None,
         submit_oracle: Optional[Callable[[str], bool]] = None,
+        scope: Optional[Scope] = None,
         scope_verified: bool = True,
         reachable: bool = True,
         gateway: Optional[LLMGateway] = None,
@@ -86,7 +88,15 @@ class Loop:
         self.executor = executor
         self.budget = budget or BudgetLedger()
         self.submit_oracle = submit_oracle
-        self.scope_verified = scope_verified
+        # A signed, operator-authored scope loaded through the verify-only
+        # `ScopeVerifier` (never set by the agent). When present it is the
+        # authoritative per-action choke in ACT: any action bound to an
+        # out-of-scope host:port is refused before the Executor ever runs it,
+        # and a *verified* scope IS what "scope_verified" means. When absent the
+        # choke is inactive and the legacy `scope_verified` bool drives the
+        # signal — preserving the fully-deterministic, scope-less test path.
+        self.scope = scope
+        self.scope_verified = True if scope is not None else scope_verified
         self.reachable = reachable
         # Optional LLM gateway. When present it performs hypothesis abduction and
         # charges its OWN token spend to the loop's ONE ledger (so the flat
@@ -107,6 +117,23 @@ class Loop:
         self.dead_end: Set[Tuple[str, str, str]] = set()
         self._last_entity_count = 0
         self._all_exploit_dead = False
+
+    @classmethod
+    def from_scope_manifest(
+        cls,
+        case,
+        executor: Executor,
+        manifest: Dict,
+        trusted_operator_keys,
+        **kwargs,
+    ) -> "Loop":
+        """Construct a loop whose scope choke is bound to a *signed* scope
+        manifest. The manifest is verified here through the verify-only
+        `ScopeVerifier` (the server holds no private key and never authors
+        scope); an untrusted signature raises `ScopeError` and no loop is built.
+        The loop then only ever sees the resulting verified `Scope`."""
+        scope = ScopeVerifier(trusted_operator_keys).load_scope(manifest)
+        return cls(case, executor, scope=scope, **kwargs)
 
     # ---------------------------------------------------------------- signals
     def _world(self) -> World:
@@ -224,6 +251,32 @@ class Loop:
             if self.flag.submit(decision, self.submit_oracle):
                 self._set_phase("FLAG_FOUND", "platform oracle confirmed")
 
+    def _scope_reason(self, action: CandidateAction, world: World) -> Optional[str]:
+        """Per-action scope choke (§1, §2). Returns a refusal reason if the
+        action's bound target is out of the verified scope, else None.
+
+        No scope loaded → choke inactive (None). A target with no network
+        address (a crypto artifact, a file) is not scope-gated → None. A target
+        with a host but no bound port yet (e.g. a port scan) must match a scope
+        host rule; a host:port target must satisfy `in_scope(host, port)`."""
+        if self.scope is None:
+            return None
+        entity = world.get(action.target_id)
+        if entity is None:
+            return None                     # missing target handled in ACT
+        tgt = entity.target()
+        host = tgt.get("addr") or tgt.get("host")
+        if not isinstance(host, str) or not host:
+            return None                     # non-network target — not scope-gated
+        port = tgt.get("port")
+        if port is None:
+            if not self.scope.host_in_scope(host):
+                return f"host {host} out of scope"
+            return None
+        if not self.scope.in_scope(host, port):
+            return f"target {host}:{port} out of scope"
+        return None
+
     # ---------------------------------------------------------------- step
     def step(self) -> StepResult:
         # ---- OBSERVE ----
@@ -261,6 +314,28 @@ class Loop:
         sel = select(ps.proposals, self.phase, t=self.turn, n_class=self.n_class,
                      info_gain=self._info_gain(ps.proposals))
         action = sel.action
+
+        # ---- scope choke (per-request, before the Executor is touched) ----
+        # Defense in depth: even though candidates are generated from in-scope
+        # discovery, the verified scope is enforced here so an out-of-scope
+        # target can never reach the Executor. Refused actions are logged and
+        # dead-ended (never re-proposed), mirroring the adapterless-action path.
+        deny = self._scope_reason(action, world)
+        if deny is not None:
+            self.case.append(EventDraft(
+                type="note.added",
+                actor={"kind": "system", "name": "engine"},
+                payload={"note": f"scope choke refused {action.capability} "
+                                 f"on {action.target_display}: {deny}",
+                         "target_id": action.target_id, "kind": "scope_refused"},
+            ))
+            key = action.dedup_key()
+            self.tried.add(key)
+            self.dead_end.add(key)          # out of scope is permanent for this target
+            self.progress.record(False)
+            return StepResult(self.phase, action=action, progressed=False,
+                              reason=f"scope choke: {deny}",
+                              budget=self.budget.snapshot())
 
         # ---- ACT ----
         before_sig = world.signature()

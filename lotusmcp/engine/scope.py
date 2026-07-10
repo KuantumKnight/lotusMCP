@@ -127,6 +127,11 @@ class Scope:
         return cls(hosts=hosts, ports=ports,
                    auto_cap=int(p.get("auto_cap", 1)), _rules=rules)
 
+    def host_in_scope(self, host: str) -> bool:
+        """True iff `host` matches a trusted host rule, ignoring ports. Used by
+        host-level actions (e.g. a port scan) that have no bound port yet."""
+        return any(_host_matches(r, host) for r in self._rules)
+
     def in_scope(self, host: str, port: int) -> bool:
         try:
             port = int(port)
@@ -134,7 +139,7 @@ class Scope:
             return False
         if not _port_in(self.ports, port):
             return False
-        return any(_host_matches(r, host) for r in self._rules)
+        return self.host_in_scope(host)
 
     def is_subset_of(self, other: "Scope") -> bool:
         """True iff this scope only NARROWS `other`: every host contained, every
