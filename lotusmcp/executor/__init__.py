@@ -16,8 +16,10 @@ from lotusmcp.executor.parse import (
     parse_nmap_xml,
 )
 from lotusmcp.executor.plan import plan_action
+from lotusmcp.executor.replay import FixtureBackend, ReplayExecutor
 
 __all__ = [
     "ArgvPlan", "ArgvRejected", "NoAdapter", "build_argv", "plan_action",
     "parse_nmap_xml", "parse_http_response", "parse_ffuf_json",
+    "ReplayExecutor", "FixtureBackend",
 ]
