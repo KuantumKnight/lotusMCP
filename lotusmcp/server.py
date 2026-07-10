@@ -1,10 +1,12 @@
 """LotusMCP MCP server — the small, stable facade.
 
-Phase-0 surface only: case management + read-only knowledge queries. The Kali
-Executor, the OODA loop, and flag handling arrive in later phases (see
-ARCHITECTURE.md build phases). Per-tool Kali wrappers are NEVER individual MCP
-tools — they are internal adapters behind `propose_and_run` — so the tool count
-stays inside the ChatGPT connector budget.
+Surface: case management, read-only knowledge queries + progressive disclosure
+(get_state / kb_query / kb_get), flag scanning, Regime-B interactive sessions
+(session_edit_run / session_close / session_list, fail-closed), a bounded resume
+packet (case_resume), and the LITE ChatGPT deep-research bridge (search / fetch)
+served from the ONE surface Resolver that also backs Resources. Per-tool Kali
+wrappers are NEVER individual MCP tools — they are internal adapters behind
+`propose_and_run` — so the tool count stays inside the ChatGPT connector budget.
 
 Run:  python -m lotusmcp.server        (stdio; add to your MCP client config)
 Requires:  pip install "mcp[cli]"
@@ -43,6 +45,11 @@ SESSIONS = SessionService(
     trusted_keys=[k.strip() for k in
                   os.environ.get("LOTUS_TRUSTED_OP_KEYS", "").split(",") if k.strip()],
 )
+
+
+from lotusmcp.gateway import Resolver  # noqa: E402
+
+RESOLVER = Resolver(CASES_DIR)     # the ONE surface resolver (Resources + fetch)
 
 
 def _case(case_id: str) -> Case:
@@ -137,10 +144,47 @@ def session_list(case_id: str) -> list:
     return SESSIONS.list(case_id)
 
 
+@mcp.tool()
+def case_resume(case_id: str) -> dict:
+    """Bounded, salience-ranked resume packet: enough to reconstruct working
+    context for a fresh session (phase, scope, budget, top attack surface, open
+    findings, live hypotheses, dead ends) and never more than the token budget —
+    over budget, the lowest-salience items are dropped and reported in
+    `truncated`. Read this to resume a case you don't have loaded."""
+    from lotusmcp.kernel.resume import build_resume_packet
+    case = _case(case_id)
+    return build_resume_packet(case.rebuild()["graph_db"], case.meta, case.store.tip)
+
+
+@mcp.tool()
+def search(query: str, case_id: str) -> list:
+    """LITE (ChatGPT deep-research): search the case for entities, findings and
+    hypotheses matching `query`. Returns result stubs `{id, title, url, snippet}`
+    where `id` is a resolvable lotus:// URI — pass it to `fetch` for full detail.
+    An empty query returns the most salient items."""
+    return RESOLVER.search(case_id, query)
+
+
+@mcp.tool()
+def fetch(id: str) -> dict:
+    """LITE (ChatGPT deep-research): resolve a search result `id` (a lotus:// URI)
+    to its full document `{id, title, text, url, metadata}`. Delegates to the same
+    resolver as Claude Resources, so the two profiles never drift."""
+    return RESOLVER.fetch(id)
+
+
 @mcp.resource("lotus://case/{case_id}/brief")
 def brief(case_id: str) -> str:
     """The bounded STATE.md working set as a subscribable resource."""
     return _case(case_id).state_md()
+
+
+@mcp.resource("lotus://case/{case_id}/resume")
+def resume_resource(case_id: str) -> str:
+    """The bounded resume packet as a subscribable resource (same content the
+    `case_resume` tool and `fetch` return — one resolver, no drift)."""
+    import json
+    return json.dumps(RESOLVER.fetch(f"lotus://case/{case_id}/resume"), indent=2)
 
 
 if __name__ == "__main__":
