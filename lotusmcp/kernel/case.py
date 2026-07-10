@@ -20,7 +20,7 @@ from lotusmcp.kernel.state import render_state_md
 
 
 class Case:
-    def __init__(self, base_dir: str | os.PathLike, case_id: str) -> None:
+    def __init__(self, base_dir: str | os.PathLike, case_id: str, vault=None) -> None:
         self.case_id = case_id
         self.dir = Path(base_dir) / case_id
         self.dir.mkdir(parents=True, exist_ok=True)
@@ -30,12 +30,14 @@ class Case:
         self.scope_path = self.dir / "scope.json"
         # One redactor per case so the flag (never redacted) and the reveal
         # vault are case-scoped. flag_format may not exist yet on first create.
+        # `vault` lets a caller supply the production AES-GCM vault; None keeps
+        # the stdlib keyed-XOR skeleton so the kernel has no hard crypto dep.
         flag_format = None
         if self.meta_path.exists():
             flag_format = json.loads(
                 self.meta_path.read_text(encoding="utf-8")
             ).get("flag_format")
-        self.redactor = Redactor(flag_format=flag_format)
+        self.redactor = Redactor(flag_format=flag_format, vault=vault)
         self.store = EventStore(self.dir, redactor=self.redactor)
 
     # ---- metadata (small, mutable header; the log remains the truth) ----
@@ -55,8 +57,8 @@ class Case:
 
     @classmethod
     def create(cls, base_dir, case_id, title="", category=None,
-               flag_format=None, platform=None) -> "Case":
-        c = cls(base_dir, case_id)
+               flag_format=None, platform=None, vault=None) -> "Case":
+        c = cls(base_dir, case_id, vault=vault)
         c.set_meta(case_id=case_id, title=title, category=category,
                    flag_format=flag_format, platform=platform)
         c.redactor.set_flag_format(flag_format)
