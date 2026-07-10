@@ -173,6 +173,35 @@ def fetch(id: str) -> dict:
     return RESOLVER.fetch(id)
 
 
+@mcp.tool()
+def case_replay(case_id: str, at_seq: int) -> dict:
+    """Reconstruct the case state as of event `at_seq` — the authoritative phase
+    plus a bounded snapshot of the graph at that moment. A pure fold of the log
+    prefix, so it is byte-for-byte the projection the case had then."""
+    from lotusmcp.replay import state_at
+    return state_at(_case(case_id), at_seq)
+
+
+@mcp.tool()
+def case_diff(case_id: str, from_seq: int, to_seq: int) -> dict:
+    """The graph delta between two seqs: entities/findings/hypotheses added and
+    hypotheses whose status/confidence changed, plus the phase transition."""
+    from lotusmcp.replay import diff
+    return diff(_case(case_id), from_seq, to_seq)
+
+
+@mcp.tool()
+def case_writeup(case_id: str) -> dict:
+    """Generate the two-stage writeup: a deterministic IR whose every claim is
+    citation-checked against the log, with unsupported sentences exiled
+    (`writeup.claim_rejected`). Returns the markdown + accept/reject counts. The
+    writeup can never assert something the append-only log doesn't support."""
+    from lotusmcp.replay import generate_writeup
+    out = generate_writeup(_case(case_id))
+    return {"markdown": out["markdown"], "accepted": out["accepted"],
+            "rejected": out["rejected"]}
+
+
 @mcp.resource("lotus://case/{case_id}/brief")
 def brief(case_id: str) -> str:
     """The bounded STATE.md working set as a subscribable resource."""
