@@ -10,6 +10,14 @@ from lotusmcp.executor.argv import (
     NoAdapter,
     build_argv,
 )
+from lotusmcp.executor.parse import (
+    parse_ffuf_json,
+    parse_http_response,
+    parse_nmap_xml,
+)
 from lotusmcp.executor.plan import plan_action
 
-__all__ = ["ArgvPlan", "ArgvRejected", "NoAdapter", "build_argv", "plan_action"]
+__all__ = [
+    "ArgvPlan", "ArgvRejected", "NoAdapter", "build_argv", "plan_action",
+    "parse_nmap_xml", "parse_http_response", "parse_ffuf_json",
+]
