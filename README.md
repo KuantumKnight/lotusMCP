@@ -70,10 +70,14 @@ the **standard library alone** (no Kali, no LLM, no external deps):
 #    rebuilds the graph, and prints the bounded STATE.md.
 python -m lotusmcp.demo.seed_recon
 
-# 2. Run the determinism + tamper-evidence tests.
+# 2. See the deterministic BRAIN decide — triage -> playbooks -> EV+UCB select.
+#    No Kali, no LLM: prints the action it would dispatch each phase, and why.
+python -m lotusmcp.demo.decide_loop
+
+# 3. Run the determinism + tamper-evidence tests.
 python -m pytest tests/ -q          # or: PYTHONPATH=. python tests/test_replay_equivalence.py
 
-# 3. Run the MCP server (needs the SDK).
+# 4. Run the MCP server (needs the SDK).
 pip install "mcp[cli]"
 python -m lotusmcp.server           # stdio transport
 ```
