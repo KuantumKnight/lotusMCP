@@ -35,9 +35,20 @@ class Entity:
     confidence: float = 1.0
     attrs: Dict[str, Any] = field(default_factory=dict)
     edges: Dict[str, List[str]] = field(default_factory=dict)  # rel_type -> [dst_id]
+    nk: Dict[str, Any] = field(default_factory=dict)           # natural key (addr/host/port)
 
     def attr(self, name: str, default: Any = None) -> Any:
         return self.attrs.get(name, default)
+
+    def target(self) -> Dict[str, Any]:
+        """The structured target an Executor adapter needs: the natural key
+        (addr/host/proto/port) merged with any folded attrs that refine it
+        (e.g. a discovered scheme). The argv layer re-validates every field."""
+        merged = dict(self.nk)
+        for k in ("scheme", "proto"):
+            if k in self.attrs and k not in merged:
+                merged[k] = self.attrs[k]
+        return merged
 
 
 @dataclass(frozen=True)
@@ -114,6 +125,7 @@ class World:
                 confidence=r.get("confidence", 1.0),
                 attrs=r.get("attrs", {}),
                 edges=r.get("edges", {}),
+                nk=r.get("nk", r.get("natural_key", {})),
             ))
         fnds = [Finding(**f) for f in (findings or [])]
         hyps = [Hypothesis(**h) for h in (hypotheses or [])]
@@ -125,9 +137,10 @@ class World:
         conn.row_factory = sqlite3.Row
         ents: List[Entity] = []
         for row in conn.execute(
-            "SELECT entity_id,kind,key_display,status,confidence FROM entity"
+            "SELECT entity_id,kind,key_display,status,confidence,natural_key FROM entity"
         ):
             eid = row["entity_id"]
+            nk = _loads(row["natural_key"])
             attrs: Dict[str, Any] = {}
             for a in conn.execute(
                 "SELECT attr,value_json FROM attribute WHERE entity_id=?", (eid,)
@@ -142,7 +155,7 @@ class World:
             ):
                 edges.setdefault(e["rel_type"], []).append(e["dst_id"])
             ents.append(Entity(eid, row["kind"], row["key_display"],
-                               row["status"], row["confidence"], attrs, edges))
+                               row["status"], row["confidence"], attrs, edges, nk))
 
         findings: List[Finding] = []
         for f in conn.execute(

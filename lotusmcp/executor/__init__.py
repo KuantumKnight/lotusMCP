@@ -10,5 +10,6 @@ from lotusmcp.executor.argv import (
     NoAdapter,
     build_argv,
 )
+from lotusmcp.executor.plan import plan_action
 
-__all__ = ["ArgvPlan", "ArgvRejected", "NoAdapter", "build_argv"]
+__all__ = ["ArgvPlan", "ArgvRejected", "NoAdapter", "build_argv", "plan_action"]
