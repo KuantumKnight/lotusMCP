@@ -199,6 +199,21 @@ class Loop:
             appended = True
         return appended
 
+    def _info_gain(self, proposals):
+        """DECIDE step: ask the gateway to estimate per-candidate info-gain and
+        return the `InfoGainFn` the EV+UCB selector folds into `EV(a)`. Without a
+        gateway, return None so the selector uses its default (1.0) and the choice
+        stays fully deterministic. The estimate is ADVISORY — it only scales the
+        info-gain term; phase gating, priors, cost and tie-break are unchanged."""
+        if self.gateway is None or not proposals:
+            return None
+        cands = [{"key": "|".join(p.action.dedup_key()),
+                  "yield": p.action.yield_, "cost": p.action.cost}
+                 for p in proposals]
+        ranking = self.gateway.rank(cands, phase=self.phase).get("ranking", [])
+        ig_map = {r["key"]: r["info_gain"] for r in ranking}
+        return lambda a: ig_map.get("|".join(a.dedup_key()), 1.0)
+
     def _maybe_submit(self, world: World) -> None:
         """On entering SOLVED_PENDING_SUBMIT with an oracle wired, try to verify."""
         if self.phase != "SOLVED_PENDING_SUBMIT" or not self.submit_oracle:
@@ -243,7 +258,8 @@ class Loop:
             self.progress.record(False)
             return StepResult(self.phase, reason="no candidates (regress/escalate next)",
                               budget=self.budget.snapshot())
-        sel = select(ps.proposals, self.phase, t=self.turn, n_class=self.n_class)
+        sel = select(ps.proposals, self.phase, t=self.turn, n_class=self.n_class,
+                     info_gain=self._info_gain(ps.proposals))
         action = sel.action
 
         # ---- ACT ----
