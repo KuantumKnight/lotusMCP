@@ -124,25 +124,18 @@ class InteractiveSession:
         with (self.workspace / "transcript.log").open("a", encoding="utf-8") as fh:
             fh.write(f"--- rev {script.rev} ---\n{red_tr}\n")
 
-    def iterate(self) -> IterateResult:
-        """One author → run → fold cycle. Charges the shared budget, appends the
-        session events (output redacted by the serializer), scans for flags, and
-        closes the session on a flag, the revision cap, or budget exhaustion."""
-        if not self.opened or self.closed:
-            return IterateResult(self.rev, closed=self.closed, reason="not open")
-        if self.budget.exhausted():
-            self.close("budget exhausted")
-            return IterateResult(self.rev, closed=True, reason="budget exhausted")
-
-        # ---- author / patch the script ----
-        script = self.author.author(self.goal, self.entity, self.runs, self.rev)
+    def _run_script(self, script: Script) -> IterateResult:
+        """Run one authored/patched script against the persistent tube and fold
+        the result: emit `script.revised`/`script.run` (output redacted by the
+        serializer choke), charge the shared budget, mirror the workspace, scan
+        for flags, and close on a flag or the revision cap. Shared by the
+        autonomous `iterate()` and the client-driven `edit_run()`."""
         self.case.append(EventDraft(
             "script.revised", _ACTOR_LLM,
             {"sid": self.sid, "rev": script.rev, "sha": script.sha(),
              "note": script.note, "target_id": script.target_id},
         ))
 
-        # ---- run it against the persistent tube ----
         run = self.runner.run(script, self.tube)
         self.runs.append(run)
         self.budget.charge(tool_invocations=1, phase=self.phase)
@@ -168,6 +161,40 @@ class InteractiveSession:
             self.close("revision cap reached")
             res.closed, res.reason = True, "revision cap reached"
         return res
+
+    def _guard(self) -> Optional[IterateResult]:
+        """Shared precondition check for a run: session must be open and the
+        budget must not be spent."""
+        if not self.opened or self.closed:
+            return IterateResult(self.rev, closed=self.closed, reason="not open")
+        if self.budget.exhausted():
+            self.close("budget exhausted")
+            return IterateResult(self.rev, closed=True, reason="budget exhausted")
+        return None
+
+    def iterate(self) -> IterateResult:
+        """One autonomous author → run → fold cycle (Regime-B loop path): the
+        injected `ScriptAuthor` writes the next revision, then it is run."""
+        blocked = self._guard()
+        if blocked is not None:
+            return blocked
+        script = self.author.author(self.goal, self.entity, self.runs, self.rev)
+        return self._run_script(script)
+
+    def edit_run(self, sends, text: str = "", note: str = "client script") -> IterateResult:
+        """Run a client-supplied script revision (the `session_edit_run` MCP
+        path, §3): the caller — a human or the LLM over MCP — authors/patches the
+        script; the server runs it against the persistent tube under the same
+        scope/budget/redaction invariants as the autonomous path."""
+        blocked = self._guard()
+        if blocked is not None:
+            return blocked
+        sends = tuple(sends)
+        script = Script(rev=self.rev, target_id=self.entity.get("id", "?"),
+                        sends=sends, note=note,
+                        text=text or ("# client-supplied script\n"
+                                      + "\n".join(f"send {s!r}" for s in sends) + "\n"))
+        return self._run_script(script)
 
     def close(self, reason: str = "done") -> None:
         if self.closed:
