@@ -20,9 +20,10 @@ Pure over the graph + case meta; no network, no model. `search` results are
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from lotusmcp import kb
 from lotusmcp.engine.salience import Salience, score
@@ -114,12 +115,60 @@ class Resolver:
                 "metadata": metadata}
 
     # ------------------------------------------------------------------ search
+    def _fts_uris(self, conn: sqlite3.Connection, cid: str, q: str
+                  ) -> Optional[Set[str]]:
+        """Build a transient FTS5 index over the searchable surface and return
+        the set of matching URIs for `q` (tokenized, multi-term AND, prefix), or
+        None to signal the caller to fall back to substring matching (FTS5 not
+        compiled in, or the query has no usable tokens). Pure over the graph —
+        the index lives in `temp.` and is dropped before returning."""
+        toks = re.findall(r"[a-z0-9_.]+", q)
+        if not toks:
+            return None
+        try:
+            conn.execute("DROP TABLE IF EXISTS temp.ftsidx")
+            conn.execute(
+                "CREATE VIRTUAL TABLE temp.ftsidx USING fts5(uri UNINDEXED, body)"
+            )
+            rows: List[Tuple[str, str]] = []
+            for r in conn.execute(
+                "SELECT entity_id,kind,key_display FROM entity "
+                "WHERE status IS NULL OR status NOT IN ('retracted','superseded')"
+            ):
+                rows.append((self._uri(cid, "entity", r["entity_id"]),
+                             f"{r['kind']} {r['key_display'] or ''}"))
+            for r in conn.execute(
+                "SELECT id,ftype,subject_json,attrs_json,severity FROM finding"
+            ):
+                rows.append((self._uri(cid, "finding", r["id"]),
+                             f"{r['ftype'] or ''} {r['subject_json'] or ''} "
+                             f"{r['attrs_json'] or ''} {r['severity'] or ''}"))
+            for r in conn.execute(
+                "SELECT hid,statement,status FROM hypothesis WHERE status!='KILLED'"
+            ):
+                rows.append((self._uri(cid, "hypothesis", r["hid"]),
+                             f"{r['statement'] or ''} {r['status'] or ''}"))
+            conn.executemany("INSERT INTO temp.ftsidx(uri,body) VALUES(?,?)", rows)
+            # each token a quoted prefix term; whitespace = implicit AND.
+            match = " ".join(f'"{t}"*' for t in toks)
+            return {row[0] for row in conn.execute(
+                "SELECT uri FROM temp.ftsidx WHERE ftsidx MATCH ?", (match,))}
+        except sqlite3.OperationalError:
+            return None
+        finally:
+            try:
+                conn.execute("DROP TABLE IF EXISTS temp.ftsidx")
+            except sqlite3.OperationalError:
+                pass
+
     def search(self, cid: str, query: str, limit: int = SEARCH_LIMIT
                ) -> List[Dict[str, Any]]:
-        """Deep-research `search`: case-insensitive match over entities, findings
-        and hypotheses; results are `{id=uri, title, url, snippet}`, ranked by
-        salience (entities) / severity+confidence (findings) / confidence
-        (hypotheses). An empty query returns the most salient items."""
+        """Deep-research `search`: full-text match over entities, findings and
+        hypotheses via a transient FTS5 index (tokenized, multi-term AND,
+        prefix), falling back to substring where FTS5 is unavailable. Results
+        are `{id=uri, title, url, snippet}`, ranked by salience (entities) /
+        severity+confidence (findings) / confidence (hypotheses). An empty
+        query returns the most salient items."""
         case = self._case(cid)
         db = self._graph_db(case)
         q = (query or "").strip().lower()
@@ -128,43 +177,57 @@ class Resolver:
         conn = sqlite3.connect(db)
         conn.row_factory = sqlite3.Row
         try:
+            fts = self._fts_uris(conn, cid, q) if q else None
+
+            def _skip(uri: str, hay: str) -> bool:
+                if not q:
+                    return False
+                if fts is not None:
+                    return uri not in fts
+                return q not in hay      # substring fallback
+
             for r in conn.execute(
                 "SELECT entity_id,kind,key_display,confidence,last_seq FROM entity "
                 "WHERE status IS NULL OR status NOT IN ('retracted','superseded')"
             ):
+                uri = self._uri(cid, "entity", r["entity_id"])
                 hay = f"{r['kind']} {r['key_display']}".lower()
-                if q and q not in hay:
+                if _skip(uri, hay):
                     continue
                 sal = Salience(s_conf=r["confidence"] or 0.0, s_hyp=1.0,
                                last_seq=r["last_seq"] or 0)
                 hits.append((score(sal, tip), {
-                    "id": self._uri(cid, "entity", r["entity_id"]),
+                    "id": uri,
                     "title": f"{r['kind']}: {r['key_display']}",
-                    "url": self._uri(cid, "entity", r["entity_id"]),
+                    "url": uri,
                     "snippet": f"{r['kind']} {r['key_display']}"[:_SNIPPET]}))
             for r in conn.execute(
-                "SELECT id,ftype,subject_json,severity,confidence FROM finding"
+                "SELECT id,ftype,subject_json,attrs_json,severity,confidence FROM finding"
             ):
-                hay = f"{r['ftype']} {r['subject_json']} {r['severity']}".lower()
-                if q and q not in hay:
+                uri = self._uri(cid, "finding", r["id"])
+                hay = (f"{r['ftype']} {r['subject_json']} {r['attrs_json']} "
+                       f"{r['severity']}").lower()
+                if _skip(uri, hay):
                     continue
                 sev = {"crit": 3, "critical": 3, "high": 2, "med": 1,
                        "medium": 1}.get((r["severity"] or "").lower(), 0)
                 hits.append((10 + sev + (r["confidence"] or 0.0), {
-                    "id": self._uri(cid, "finding", r["id"]),
+                    "id": uri,
                     "title": f"[{r['severity']}] {r['ftype']}",
-                    "url": self._uri(cid, "finding", r["id"]),
+                    "url": uri,
                     "snippet": f"{r['ftype']} @ {r['subject_json']}"[:_SNIPPET]}))
             for r in conn.execute(
                 "SELECT hid,statement,status,confidence FROM hypothesis "
                 "WHERE status!='KILLED'"
             ):
-                if q and q not in (r["statement"] or "").lower():
+                uri = self._uri(cid, "hypothesis", r["hid"])
+                hay = f"{r['statement'] or ''} {r['status'] or ''}".lower()
+                if _skip(uri, hay):
                     continue
                 hits.append((5 + (r["confidence"] or 0.0), {
-                    "id": self._uri(cid, "hypothesis", r["hid"]),
+                    "id": uri,
                     "title": f"hypothesis {r['hid']}",
-                    "url": self._uri(cid, "hypothesis", r["hid"]),
+                    "url": uri,
                     "snippet": (r["statement"] or "")[:_SNIPPET]}))
         finally:
             conn.close()
