@@ -40,9 +40,12 @@ def test_mandatory_and_excluded_lite_tools():
         assert t in lite, f"{t} is mandatory for deep research and missing from LITE"
     # advisory read-only planning is safe for the read-only LITE client
     assert "lotus_next" in lite, "lotus_next (read-only) should be in LITE"
+    # read-only artifact fetch is safe for LITE
+    assert "kb_artifact" in lite, "kb_artifact (read-only) should be in LITE"
     # exec / ops / scrape / submit must never leak into the read-only LITE client
     for t in ("session_edit_run", "session_close", "session_list",
-              "case_compact", "case_metrics", "propose_and_run", "lotus_submit"):
+              "case_compact", "case_gc", "case_metrics", "propose_and_run",
+              "lotus_submit"):
         assert t not in lite, f"{t} must be FULL-only"
     # but they ARE in FULL
     for t in ("session_edit_run", "case_compact", "case_metrics",

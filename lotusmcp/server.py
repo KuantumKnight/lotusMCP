@@ -157,6 +157,35 @@ def lotus_submit(case_id: str, value: str = "") -> dict:
 
 
 @tool
+def kb_artifact(case_id: str, sha: str) -> dict:
+    """Fetch a Tier-B artifact blob by content-address. Returns its status and,
+    if present, the redacted text. An evicted blob degrades to
+    `{present: false, note: "artifact evicted, integrity hash retained"}` —
+    citations never dangle. Content is already redacted; secrets show as
+    «SECRET:…» placeholders."""
+    store = _case(case_id).blobs
+    out = store.status(sha)
+    data = store.get(sha)
+    if data is not None:
+        try:
+            out["text"] = data.decode("utf-8")
+        except UnicodeDecodeError:
+            out["text"] = None
+            out["binary"] = True
+    return out
+
+
+@tool
+def case_gc(case_id: str) -> dict:
+    """Enforce the Tier-B retention SLA: evict unpinned artifact blobs past
+    their retention window, then LRU-evict to fit the size cap. Pinned blobs
+    (flag / high-sev finding / critical-path citations) are never evicted; Tier
+    A (log + graph) is untouched, so replay is unaffected. Returns eviction
+    stats."""
+    return _case(case_id).blobs.gc()
+
+
+@tool
 def flag_scan(case_id: str, text: str) -> dict:
     """Scan text/output for the flag — direct format hits and flags buried under
     stacked encodings (the bounded decode ladder). New candidates are logged as

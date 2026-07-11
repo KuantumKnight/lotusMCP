@@ -74,6 +74,18 @@ class Case:
     def append(self, draft: EventDraft) -> Dict[str, Any]:
         return self.store.append(draft)
 
+    # ---- Tier-B artifact blobs (durability SLA; see kernel/blobstore.py) ----
+    @property
+    def blobs(self):
+        """The case's content-addressed Tier-B blob store (lazy). Tier A (the
+        log + graph) is authoritative; blobs are a cache with a retention SLA."""
+        bs = getattr(self, "_blobs", None)
+        if bs is None:
+            from lotusmcp.kernel.blobstore import BlobStore
+            bs = BlobStore(self.dir)
+            self._blobs = bs
+        return bs
+
     # ---- deterministic projection rebuild ----
     def rebuild(self) -> Dict[str, str]:
         graph_path = self.dir / "projections" / "graph.db"
