@@ -31,12 +31,14 @@ PROFILES = (LITE, FULL)
 _CATEGORY_MIN_PROFILE = {
     "case": LITE,     # create_case
     "read": LITE,     # get_state, kb_query, kb_get, case_resume
+    "plan": LITE,     # lotus_next  (advisory, read-only next action)
     "flag": LITE,     # flag_scan
     "bridge": LITE,   # search, fetch  (the mandatory deep-research pair)
     "replay": LITE,   # case_replay, case_diff, case_writeup
     "scrape": FULL,   # case_metrics  (Prometheus exposition, not a research tool)
     "ops": FULL,      # case_compact  (projection maintenance)
-    "exec": FULL,     # session_*     (Regime-B interactive exploitation)
+    "exec": FULL,     # session_*, propose_and_run  (Kali-touching execution)
+    "submit": FULL,   # lotus_submit  (consequential platform submission)
 }
 
 # name -> category. The single registry the profile filter and the server share.
@@ -46,6 +48,9 @@ TOOL_CATEGORY = {
     "kb_query": "read",
     "kb_get": "read",
     "case_resume": "read",
+    "lotus_next": "plan",
+    "propose_and_run": "exec",
+    "lotus_submit": "submit",
     "flag_scan": "flag",
     "search": "bridge",
     "fetch": "bridge",

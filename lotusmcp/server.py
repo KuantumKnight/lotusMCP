@@ -51,6 +51,14 @@ from lotusmcp.gateway import Resolver  # noqa: E402
 
 RESOLVER = Resolver(CASES_DIR)     # the ONE surface resolver (Resources + fetch)
 
+# Loop/flag jobs. Like SESSIONS, all policy is in the SDK-free JobService;
+# lotus_next is read-only and always works, while propose_and_run (sandbox
+# executor) and lotus_submit (signed platform oracle) fail closed until a
+# launcher calls JOBS.configure(executor_factory=..., submit_oracle=...).
+from lotusmcp.engine.jobs import JobService  # noqa: E402
+
+JOBS = JobService(CASES_DIR)
+
 # Profile gate + envelope cap (all decided in the SDK-free gateway.profile, so
 # the split is unit-tested there). LITE = ChatGPT deep-research (read-only,
 # tool-budget-bound); FULL = Claude/operator. `LOTUS_PROFILE=LITE|FULL`.
@@ -119,6 +127,33 @@ def kb_get(case_id: str, entity_id: str) -> dict:
     """One graph node: its attributes (with confidence/corroboration/conflict)
     and outgoing edges."""
     return kb.get(_graph_db(case_id), case_id, entity_id)
+
+
+@tool
+def lotus_next(case_id: str, top: int = 5) -> dict:
+    """Advisory, READ-ONLY: the next action(s) the planner would take in the
+    case's current phase — the same PlaybookEngine → EV+UCB pick the loop makes,
+    ranked with scores, but WITHOUT executing anything or mutating the case.
+    Returns `{recommended, alternatives, phase, category}`."""
+    return JOBS.next(case_id, top=top)
+
+
+@tool
+def propose_and_run(case_id: str, max_steps: int = 1) -> dict:
+    """FULL (exec): advance the case up to `max_steps` OODA steps with the
+    sandboxed executor — the ONE tool behind which the per-tool Kali adapters
+    run (they are never individual MCP tools). Scope/budget/redaction enforced
+    by the loop. Fails closed if no sandbox executor is configured."""
+    return JOBS.propose_and_run(case_id, max_steps=max_steps)
+
+
+@tool
+def lotus_submit(case_id: str, value: str = "") -> dict:
+    """FULL: submit a flag to the operator-signed platform oracle. Omit `value`
+    to let the conservative submit policy pick the best viable candidate, or pass
+    a specific known candidate value. Never auto-submits; fails closed with no
+    oracle configured. Emits flag.submitted → flag.verified/rejected."""
+    return JOBS.submit(case_id, value=value or None)
 
 
 @tool

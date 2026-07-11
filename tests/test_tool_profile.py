@@ -38,14 +38,17 @@ def test_mandatory_and_excluded_lite_tools():
     lite = set(tools_for(LITE))
     for t in MANDATORY_LITE:
         assert t in lite, f"{t} is mandatory for deep research and missing from LITE"
-    # exec / ops / scrape must never leak into the read-only LITE client
+    # advisory read-only planning is safe for the read-only LITE client
+    assert "lotus_next" in lite, "lotus_next (read-only) should be in LITE"
+    # exec / ops / scrape / submit must never leak into the read-only LITE client
     for t in ("session_edit_run", "session_close", "session_list",
-              "case_compact", "case_metrics"):
+              "case_compact", "case_metrics", "propose_and_run", "lotus_submit"):
         assert t not in lite, f"{t} must be FULL-only"
     # but they ARE in FULL
-    for t in ("session_edit_run", "case_compact", "case_metrics"):
+    for t in ("session_edit_run", "case_compact", "case_metrics",
+              "propose_and_run", "lotus_submit"):
         assert is_enabled(t, FULL)
-    print("search/fetch in LITE; exec/ops/scrape FULL-only")
+    print("search/fetch + lotus_next in LITE; exec/ops/scrape/submit FULL-only")
 
 
 def test_is_enabled_consistency_and_errors():
