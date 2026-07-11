@@ -31,7 +31,8 @@ PROFILES = (LITE, FULL)
 _CATEGORY_MIN_PROFILE = {
     "case": LITE,     # create_case
     "read": LITE,     # get_state, kb_query, kb_get, case_resume
-    "plan": LITE,     # lotus_next  (advisory, read-only next action)
+    "plan": LITE,     # lotus_next, technique_suggest  (advisory, read-only)
+    "library": FULL,  # technique_promote  (human-reviewed cross-case promotion)
     "flag": LITE,     # flag_scan
     "bridge": LITE,   # search, fetch  (the mandatory deep-research pair)
     "replay": LITE,   # case_replay, case_diff, case_writeup
@@ -50,6 +51,8 @@ TOOL_CATEGORY = {
     "kb_artifact": "read",
     "case_resume": "read",
     "lotus_next": "plan",
+    "technique_suggest": "plan",
+    "technique_promote": "library",
     "propose_and_run": "exec",
     "lotus_submit": "submit",
     "flag_scan": "flag",

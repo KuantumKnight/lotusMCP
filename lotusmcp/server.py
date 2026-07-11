@@ -59,6 +59,14 @@ from lotusmcp.engine.jobs import JobService  # noqa: E402
 
 JOBS = JobService(CASES_DIR)
 
+# Cross-case Technique Library (Phase 7). Lives OUTSIDE any case dir so learning
+# is shared. A launcher can inject it into the loop (Loop(library=LIBRARY)) so
+# executed actions calibrate the Beta posteriors.
+from lotusmcp.library import TechniqueLibrary  # noqa: E402
+
+LIBRARY = TechniqueLibrary(
+    os.environ.get("LOTUS_LIBRARY_DIR", str(CASES_DIR.parent / "library")))
+
 # Profile gate + envelope cap (all decided in the SDK-free gateway.profile, so
 # the split is unit-tested there). LITE = ChatGPT deep-research (read-only,
 # tool-budget-bound); FULL = Claude/operator. `LOTUS_PROFILE=LITE|FULL`.
@@ -154,6 +162,27 @@ def lotus_submit(case_id: str, value: str = "") -> dict:
     a specific known candidate value. Never auto-submits; fails closed with no
     oracle configured. Emits flag.submitted → flag.verified/rejected."""
     return JOBS.submit(case_id, value=value or None)
+
+
+@tool
+def technique_suggest(phase: str = "", category: str = "", k: int = 5) -> list:
+    """Thompson-sampled recommendations from the cross-case Technique Library:
+    generalized playbook cards (capability + param class, NO target details)
+    ranked by a draw from each card's Beta posterior, filtered by phase/category.
+    Advisory — surfaces proven and promising-but-untried patterns to try next."""
+    import random
+    return LIBRARY.suggest(phase=phase or None, category=category or None,
+                           k=k, rng=random.Random())
+
+
+@tool
+def technique_promote(tid: str, reviewer: str) -> dict:
+    """Human-reviewed promotion of a technique card (candidate → promoted).
+    Promotion is NEVER automatic; a person vets a card before it is blessed for
+    cross-case reuse. Fails if the technique was never observed."""
+    LIBRARY.promote(tid, reviewer)
+    card = LIBRARY.card(tid)
+    return card.to_dict() if card else {"tid": tid, "status": "promoted"}
 
 
 @tool

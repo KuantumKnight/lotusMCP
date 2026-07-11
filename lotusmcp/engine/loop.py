@@ -96,6 +96,7 @@ class Loop:
         reachable: bool = True,
         gateway: Optional[LLMGateway] = None,
         session_provider: Optional[SessionProvider] = None,
+        library=None,
     ) -> None:
         self.case = case
         self.executor = executor
@@ -123,6 +124,11 @@ class Loop:
         # planner's DECIDE/ACT (phase/plateau accounting suspended while open).
         # Absent (default) → the loop is the unchanged deterministic planner.
         self.session_provider = session_provider
+        # Optional cross-case Technique Library. When injected, each executed
+        # action's outcome (did it make progress?) is fed back as a generalized,
+        # target-free observation so the library's Beta posteriors calibrate over
+        # time. Absent (default) → no cross-case learning, loop unchanged.
+        self.library = library
         self._session = None
         self._session_done: Set[str] = set()   # target ids no longer worth a session
         self._session_seq = 0
@@ -463,6 +469,8 @@ class Loop:
             self.dead_end.add(key)   # produced no new knowledge -> never re-propose
         self.progress.record(progressed)
         self._last_entity_count = len(after_world)
+        if self.library is not None:
+            self.library.observe_action(action, self.phase, success=progressed)
 
         return StepResult(self.phase, action=action, progressed=progressed,
                           reason=action.rationale, budget=self.budget.snapshot())
