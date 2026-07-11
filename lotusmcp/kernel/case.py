@@ -91,6 +91,23 @@ class Case:
         return {"graph_db": str(graph_path), "built_through_seq": built,
                 "state_md": state_md}
 
+    def compact(self, keep_per_value: int = 4) -> Dict[str, Any]:
+        """Bound the live graph projection's claim log (top-K corroboration per
+        (entity, attr, value)) without changing what it asserts. Fold-preserving
+        and projection-internal: the log is untouched, so the next rebuild()
+        restores full history. Re-renders STATE.md/state.json (which stay
+        byte-identical, since the fold is preserved) and returns compaction
+        stats. Rebuilds first if no projection exists yet."""
+        graph_path = self.dir / "projections" / "graph.db"
+        if not graph_path.exists():
+            self.rebuild()
+        proj = GraphProjector(str(graph_path), create=False)
+        stats = proj.compact(keep_per_value=keep_per_value)
+        proj.close()
+        state_md = render_state_md(str(graph_path), self.meta)
+        self._atomic_write(self.dir / "projections" / "STATE.md", state_md)
+        return stats
+
     def state_md(self) -> str:
         p = self.dir / "projections" / "STATE.md"
         return p.read_text(encoding="utf-8") if p.exists() else self.rebuild()["state_md"]

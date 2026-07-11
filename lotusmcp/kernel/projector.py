@@ -23,7 +23,8 @@ CREATE TABLE entity (
   created_seq INT NOT NULL, last_seq INT NOT NULL);
 CREATE TABLE claim (
   claim_id INTEGER PRIMARY KEY AUTOINCREMENT, entity_id TEXT NOT NULL, attr TEXT NOT NULL,
-  value_json TEXT NOT NULL, confidence REAL NOT NULL, tool TEXT, source_seq INT NOT NULL);
+  value_json TEXT NOT NULL, confidence REAL NOT NULL, tool TEXT, source_seq INT NOT NULL,
+  weight INT NOT NULL DEFAULT 1);
 CREATE INDEX ix_claim_ea ON claim(entity_id, attr);
 CREATE TABLE attribute (
   entity_id TEXT, attr TEXT, value_json TEXT, confidence REAL,
@@ -63,9 +64,10 @@ def _noisy_or(claims: Iterable[tuple[float]]) -> float:
 
 
 class GraphProjector:
-    def __init__(self, db_path: str) -> None:
+    def __init__(self, db_path: str, create: bool = True) -> None:
         self.conn = sqlite3.connect(db_path)
-        self.conn.executescript(_SCHEMA)
+        if create:
+            self.conn.executescript(_SCHEMA)
 
     def _upsert_entity(self, eid, kind, nk, seq, status=None):
         row = self.conn.execute(
@@ -87,13 +89,17 @@ class GraphProjector:
 
     def _refold_attribute(self, eid, attr, seq):
         rows = self.conn.execute(
-            "SELECT value_json, confidence FROM claim WHERE entity_id=? AND attr=?",
+            "SELECT value_json, confidence, weight FROM claim WHERE entity_id=? AND attr=?",
             (eid, attr),
         ).fetchall()
-        # group claims by value; winner = highest noisy-OR aggregate.
+        # group claims by value; winner = highest noisy-OR aggregate. `weight`
+        # (>1 only on compaction-merged claims) is summed into corroboration so
+        # the count survives claim pruning; noisy-OR uses confidence alone.
         by_val: Dict[str, list] = {}
-        for value_json, conf in rows:
+        total_weight = 0
+        for value_json, conf, weight in rows:
             by_val.setdefault(value_json, []).append((conf,))
+            total_weight += weight
         best_val, best_conf = None, -1.0
         second = 0.0
         for value_json, cs in sorted(by_val.items()):  # deterministic order
@@ -110,7 +116,7 @@ class GraphProjector:
             "ON CONFLICT(entity_id,attr) DO UPDATE SET value_json=excluded.value_json,"
             "confidence=excluded.confidence,corroboration=excluded.corroboration,"
             "conflict=excluded.conflict,last_seq=excluded.last_seq",
-            (eid, attr, best_val, best_conf, len(rows), conflict, seq),
+            (eid, attr, best_val, best_conf, total_weight, conflict, seq),
         )
 
     def apply(self, ev: Dict[str, Any]) -> None:
@@ -169,6 +175,67 @@ class GraphProjector:
             )
         # other event types (command.*, budget.*, notes) are recorded in the log
         # and surfaced by other projections; the graph fold ignores them.
+
+    def compact(self, keep_per_value: int = 4) -> Dict[str, int]:
+        """Bound the claim log without changing what the graph asserts.
+
+        For each (entity, attr, value) group larger than `keep_per_value`, keep
+        the top `keep_per_value - 1` claims (ranked confidence desc, source_seq
+        desc, claim_id desc — fully deterministic) and collapse the remaining
+        tail into ONE merged claim whose confidence is the noisy-OR of the tail
+        and whose weight is the sum of their weights. Because noisy-OR is
+        associative, the refolded attribute (winning value, confidence,
+        conflict) and its corroboration count are preserved EXACTLY; only
+        redundant corroboration rows are dropped.
+
+        Projection-internal only — never touches the event log, so rebuild()
+        restores the full claim history. Deterministic and idempotent (a second
+        call is a no-op). Distinct values (hence every hypothesis/conflict the
+        fold can see) are always retained. Returns {pruned, groups, refolded}.
+        """
+        if keep_per_value < 1:
+            raise ValueError("keep_per_value must be >= 1")
+        groups = self.conn.execute(
+            "SELECT entity_id, attr, value_json FROM claim "
+            "GROUP BY entity_id, attr, value_json HAVING COUNT(*) > ? "
+            "ORDER BY entity_id, attr, value_json",
+            (keep_per_value,),
+        ).fetchall()
+        pruned = 0
+        touched: set = set()
+        for eid, attr, value_json in groups:
+            rows = self.conn.execute(
+                "SELECT claim_id, confidence, weight, source_seq FROM claim "
+                "WHERE entity_id=? AND attr=? AND value_json=? "
+                "ORDER BY confidence DESC, source_seq DESC, claim_id DESC",
+                (eid, attr, value_json),
+            ).fetchall()
+            tail = rows[keep_per_value - 1:]
+            tail_conf = _noisy_or([(c,) for _, c, _, _ in tail])
+            tail_weight = sum(w for _, _, w, _ in tail)
+            tail_seq = max(s for _, _, _, s in tail)
+            self.conn.executemany(
+                "DELETE FROM claim WHERE claim_id=?",
+                [(cid,) for cid, _, _, _ in tail],
+            )
+            self.conn.execute(
+                "INSERT INTO claim(entity_id,attr,value_json,confidence,tool,"
+                "source_seq,weight) VALUES(?,?,?,?,?,?,?)",
+                (eid, attr, value_json, tail_conf, "«compacted»", tail_seq, tail_weight),
+            )
+            pruned += len(tail) - 1  # tail rows removed, one merged row added back
+            touched.add((eid, attr))
+        for eid, attr in sorted(touched):
+            # refold at the attribute's true last_seq = max source_seq over all
+            # its surviving claims (unchanged by the tail merge), so last_seq and
+            # every other attribute field stay byte-identical to pre-compaction.
+            seq = self.conn.execute(
+                "SELECT MAX(source_seq) FROM claim WHERE entity_id=? AND attr=?",
+                (eid, attr),
+            ).fetchone()[0]
+            self._refold_attribute(eid, attr, seq)
+        self.conn.commit()
+        return {"pruned": pruned, "groups": len(groups), "refolded": len(touched)}
 
     def build(self, events: Iterable[Dict[str, Any]]) -> int:
         last = -1

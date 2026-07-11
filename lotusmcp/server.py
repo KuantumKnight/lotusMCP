@@ -211,6 +211,17 @@ def case_metrics(case_id: str) -> str:
     return render_openmetrics(_case(case_id))
 
 
+@mcp.tool()
+def case_compact(case_id: str, keep_per_value: int = 4) -> dict:
+    """Bound the live graph projection's claim log by collapsing redundant
+    corroboration (top-`keep_per_value` claims per entity/attr/value) into one
+    merged claim. Fold-preserving (noisy-OR is associative, so the asserted
+    graph and STATE.md are byte-identical) and projection-internal — the
+    append-only log is never touched, so a rebuild restores full history.
+    Deterministic and idempotent. Returns {pruned, groups, refolded}."""
+    return _case(case_id).compact(keep_per_value=keep_per_value)
+
+
 @mcp.resource("lotus://case/{case_id}/brief")
 def brief(case_id: str) -> str:
     """The bounded STATE.md working set as a subscribable resource."""
