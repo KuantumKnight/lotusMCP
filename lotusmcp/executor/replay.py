@@ -62,16 +62,42 @@ class ReplayExecutor:
 
         ent = world.get(action.target_id)
         svc_nk: Mapping[str, Any] = ent.target() if ent else {}
+        phase = case.meta.get("phase", "")
         drafts: List[EventDraft] = []
+        parsed_any = False
         for plan in plans:
+            # Record the exact validated argv as a command.requested event: this
+            # is the log's command trail (repro.sh folds it back into a runnable
+            # script). Emitted only for plans that actually run — a refused or
+            # adapterless action never reaches here.
+            drafts.append(self._cmd_requested(plan, action, phase))
             out = self.backend(plan)
-            if not out:
-                continue
-            drafts.extend(self._parse(plan, out, svc_nk))
-        if not drafts:
+            parsed = self._parse(plan, out, svc_nk) if out else []
+            parsed_any = parsed_any or bool(parsed)
+            drafts.extend(parsed)
+            drafts.append(self._cmd_completed(plan, ok=bool(out), produced=len(parsed)))
+        if not parsed_any:
             drafts.append(_note(plans[0].tool,
                                f"{plans[0].tool} ran, produced no parseable knowledge"))
         return drafts
+
+    @staticmethod
+    def _cmd_requested(plan: ArgvPlan, action, phase: str) -> EventDraft:
+        return EventDraft(
+            "command.requested", {"kind": "executor", "name": plan.tool},
+            payload={"capability": plan.capability, "tool": plan.tool,
+                     "argv": list(plan.argv), "target_id": plan.target_id,
+                     "target": action.target_display, "phase": phase,
+                     "rationale": action.rationale},
+        )
+
+    @staticmethod
+    def _cmd_completed(plan: ArgvPlan, ok: bool, produced: int) -> EventDraft:
+        return EventDraft(
+            "command.completed", {"kind": "executor", "name": plan.tool},
+            payload={"capability": plan.capability, "tool": plan.tool,
+                     "ok": ok, "produced": produced},
+        )
 
     def _parse(self, plan: ArgvPlan, out: str, svc_nk: Mapping[str, Any]) -> List[EventDraft]:
         if plan.tool == "nmap":

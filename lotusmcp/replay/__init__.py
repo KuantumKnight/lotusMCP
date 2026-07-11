@@ -6,6 +6,7 @@ seq — and the delta between two seqs — is deterministically reconstructible
 whose every claim carries citations, then a citation verifier that exiles any
 sentence the log does not support (`generate_writeup`).
 """
+from lotusmcp.replay.repro import build_repro
 from lotusmcp.replay.state import diff, state_at
 from lotusmcp.replay.writeup import (
     Claim,
@@ -20,4 +21,5 @@ __all__ = [
     "state_at", "diff",
     "Claim", "Section", "WriteupIR",
     "build_ir", "verify_claims", "generate_writeup",
+    "build_repro",
 ]

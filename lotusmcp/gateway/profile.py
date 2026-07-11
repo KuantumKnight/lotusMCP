@@ -57,6 +57,7 @@ TOOL_CATEGORY = {
     "case_replay": "replay",
     "case_diff": "replay",
     "case_writeup": "replay",
+    "case_repro": "replay",
     "case_metrics": "scrape",
     "case_compact": "ops",
     "session_edit_run": "exec",

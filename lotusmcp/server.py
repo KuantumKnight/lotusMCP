@@ -265,6 +265,17 @@ def case_writeup(case_id: str) -> dict:
 
 
 @tool
+def case_repro(case_id: str) -> str:
+    """Generate `repro.sh`: a deterministic bash reproduction of the solve,
+    folded from the log's command trail (the exact validated argv each step
+    ran), grouped by phase and annotated with rationale. Every token is
+    shell-quoted; secrets stay redacted as «SECRET:…» placeholders. Same log ⇒
+    byte-identical script; the generator runs nothing."""
+    from lotusmcp.replay import build_repro
+    return build_repro(_case(case_id))
+
+
+@tool
 def case_metrics(case_id: str) -> str:
     """OpenMetrics exposition for the case (events, entities, findings by
     severity, hypotheses by status, dead ends, flags, current phase) — a pure
