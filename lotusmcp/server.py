@@ -51,6 +51,33 @@ from lotusmcp.gateway import Resolver  # noqa: E402
 
 RESOLVER = Resolver(CASES_DIR)     # the ONE surface resolver (Resources + fetch)
 
+# Profile gate + envelope cap (all decided in the SDK-free gateway.profile, so
+# the split is unit-tested there). LITE = ChatGPT deep-research (read-only,
+# tool-budget-bound); FULL = Claude/operator. `LOTUS_PROFILE=LITE|FULL`.
+import functools  # noqa: E402
+
+from lotusmcp.gateway.profile import (  # noqa: E402
+    enforce_envelope, is_enabled, normalize_profile, tools_for,
+)
+
+PROFILE = normalize_profile(os.environ.get("LOTUS_PROFILE"))
+
+
+def tool(fn):
+    """Register `fn` as an MCP tool only if the active profile exposes it, and
+    bound its output through the envelope cap. A tool the profile hides stays
+    importable (for reuse/tests) but is never surfaced to the client, so the
+    LITE tool count stays inside the connector budget."""
+    if not is_enabled(fn.__name__, PROFILE):
+        return fn
+
+    @functools.wraps(fn)
+    def wrapped(*args, **kwargs):
+        capped, _report = enforce_envelope(fn(*args, **kwargs))
+        return capped
+
+    return mcp.tool()(wrapped)
+
 
 def _case(case_id: str) -> Case:
     return Case(CASES_DIR, case_id)
@@ -62,7 +89,7 @@ def _graph_db(case_id: str) -> str:
     return str(c.dir / "projections" / "graph.db")
 
 
-@mcp.tool()
+@tool
 def create_case(case_id: str, title: str = "", category: str = "",
                 flag_format: str = "", platform: str = "") -> dict:
     """Create a new CTF case. Scope is NOT set here — it is defined out-of-band
@@ -72,14 +99,14 @@ def create_case(case_id: str, title: str = "", category: str = "",
     return {"case_id": case_id, "state_uri": f"lotus://case/{case_id}/brief"}
 
 
-@mcp.tool()
+@tool
 def get_state(case_id: str) -> str:
     """The bounded, salience-ranked working set (STATE.md) for a case — phase,
     attack surface, findings, live hypotheses, dead ends. Read this first."""
     return _case(case_id).rebuild()["state_md"]
 
 
-@mcp.tool()
+@tool
 def kb_query(case_id: str, kind: str = "", limit: int = 50) -> list:
     """Query the case knowledge graph. Optional `kind` filters entities
     (e.g. 'http.endpoint', 'service.http', 'finding'). Rows carry a uri to
@@ -87,14 +114,14 @@ def kb_query(case_id: str, kind: str = "", limit: int = 50) -> list:
     return kb.query(_graph_db(case_id), case_id, kind or None, limit)
 
 
-@mcp.tool()
+@tool
 def kb_get(case_id: str, entity_id: str) -> dict:
     """One graph node: its attributes (with confidence/corroboration/conflict)
     and outgoing edges."""
     return kb.get(_graph_db(case_id), case_id, entity_id)
 
 
-@mcp.tool()
+@tool
 def flag_scan(case_id: str, text: str) -> dict:
     """Scan text/output for the flag — direct format hits and flags buried under
     stacked encodings (the bounded decode ladder). New candidates are logged as
@@ -118,7 +145,7 @@ def flag_scan(case_id: str, text: str) -> dict:
     }
 
 
-@mcp.tool()
+@tool
 def session_edit_run(case_id: str, script: str, sid: str = "",
                      target_id: str = "", goal: str = "") -> dict:
     """Regime B (FULL, exec): write/patch an exploit script and run it against a
@@ -131,20 +158,20 @@ def session_edit_run(case_id: str, script: str, sid: str = "",
     return SESSIONS.edit_run(case_id, script, sid=sid, target_id=target_id, goal=goal)
 
 
-@mcp.tool()
+@tool
 def session_close(case_id: str, sid: str, reason: str = "closed by operator") -> dict:
     """Close an open Regime-B session (releases the tube). Idempotent."""
     return SESSIONS.close(case_id, sid, reason)
 
 
-@mcp.tool()
+@tool
 def session_list(case_id: str) -> list:
     """List this case's sessions (open and closed) with their target and revision
     count — so the operator/agent can resume or close them."""
     return SESSIONS.list(case_id)
 
 
-@mcp.tool()
+@tool
 def case_resume(case_id: str) -> dict:
     """Bounded, salience-ranked resume packet: enough to reconstruct working
     context for a fresh session (phase, scope, budget, top attack surface, open
@@ -156,7 +183,7 @@ def case_resume(case_id: str) -> dict:
     return build_resume_packet(case.rebuild()["graph_db"], case.meta, case.store.tip)
 
 
-@mcp.tool()
+@tool
 def search(query: str, case_id: str) -> list:
     """LITE (ChatGPT deep-research): search the case for entities, findings and
     hypotheses matching `query`. Returns result stubs `{id, title, url, snippet}`
@@ -165,7 +192,7 @@ def search(query: str, case_id: str) -> list:
     return RESOLVER.search(case_id, query)
 
 
-@mcp.tool()
+@tool
 def fetch(id: str) -> dict:
     """LITE (ChatGPT deep-research): resolve a search result `id` (a lotus:// URI)
     to its full document `{id, title, text, url, metadata}`. Delegates to the same
@@ -173,7 +200,7 @@ def fetch(id: str) -> dict:
     return RESOLVER.fetch(id)
 
 
-@mcp.tool()
+@tool
 def case_replay(case_id: str, at_seq: int) -> dict:
     """Reconstruct the case state as of event `at_seq` — the authoritative phase
     plus a bounded snapshot of the graph at that moment. A pure fold of the log
@@ -182,7 +209,7 @@ def case_replay(case_id: str, at_seq: int) -> dict:
     return state_at(_case(case_id), at_seq)
 
 
-@mcp.tool()
+@tool
 def case_diff(case_id: str, from_seq: int, to_seq: int) -> dict:
     """The graph delta between two seqs: entities/findings/hypotheses added and
     hypotheses whose status/confidence changed, plus the phase transition."""
@@ -190,7 +217,7 @@ def case_diff(case_id: str, from_seq: int, to_seq: int) -> dict:
     return diff(_case(case_id), from_seq, to_seq)
 
 
-@mcp.tool()
+@tool
 def case_writeup(case_id: str) -> dict:
     """Generate the two-stage writeup: a deterministic IR whose every claim is
     citation-checked against the log, with unsupported sentences exiled
@@ -202,7 +229,7 @@ def case_writeup(case_id: str) -> dict:
             "rejected": out["rejected"]}
 
 
-@mcp.tool()
+@tool
 def case_metrics(case_id: str) -> str:
     """OpenMetrics exposition for the case (events, entities, findings by
     severity, hypotheses by status, dead ends, flags, current phase) — a pure
@@ -211,7 +238,7 @@ def case_metrics(case_id: str) -> str:
     return render_openmetrics(_case(case_id))
 
 
-@mcp.tool()
+@tool
 def case_compact(case_id: str, keep_per_value: int = 4) -> dict:
     """Bound the live graph projection's claim log by collapsing redundant
     corroboration (top-`keep_per_value` claims per entity/attr/value) into one
@@ -237,4 +264,6 @@ def resume_resource(case_id: str) -> str:
 
 
 if __name__ == "__main__":
+    import sys
+    print(f"lotusmcp: profile={PROFILE}  tools={tools_for(PROFILE)}", file=sys.stderr)
     mcp.run()
