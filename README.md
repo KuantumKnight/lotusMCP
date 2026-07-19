@@ -64,6 +64,8 @@ execution mode uses the tools installed on this Kali machine directly.
 | Host Kali executor — `nmap` / `curl` / `ffuf` through typed argv + `shell=False` | ✅ working |
 | Regime-B live sessions — TCP tube + host `python3` script runner | ✅ working |
 | LLM gateway, replay/writeup, library, community playbooks | ✅ working in deterministic/testable form |
+| Operator readiness diagnostics (`lotusmcp.ops.doctor`) | ✅ working |
+| Host/container benchmark workflow docs (`docs/BENCHMARKING.md`) | ✅ working |
 | Remaining external-bound work | Real solved-case collection / live validation |
 
 ---
@@ -94,6 +96,12 @@ for t in tests/test_*.py; do PYTHONPATH=. PYTHONIOENCODING=utf-8 python "$t" || 
 # 4. Run the read-only/default MCP server (needs the SDK).
 pip install "mcp[cli]"
 python -m lotusmcp.server           # stdio transport
+```
+
+Check this host before operating:
+
+```bash
+PYTHONPATH=. python -m lotusmcp.ops.doctor --all
 ```
 
 For FULL host execution mode, launch through `lotusmcp.launcher` instead of
@@ -161,6 +169,13 @@ Register the stdio server with an MCP client (Claude Desktop / Claude Code):
 ```
 
 Cases are written under `./cases/<case_id>/` (override with `LOTUS_CASES_DIR`).
+
+Operator docs:
+
+- [`docs/OPERATOR_RUNBOOK.md`](docs/OPERATOR_RUNBOOK.md) — host readiness,
+  scope signing, launch, anchoring, calibration.
+- [`docs/BENCHMARKING.md`](docs/BENCHMARKING.md) — best-practice live/benchmark
+  validation workflow, including NYU CTF Bench target containers.
 
 ---
 

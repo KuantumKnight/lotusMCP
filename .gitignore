@@ -8,7 +8,9 @@ build/
 .pytest_cache/
 
 # Per-case runtime data — never commit case artifacts (may contain flags/secrets)
-cases/
+/cases/
+/benchmarks/
+/ops/
 *.db
 *.db-wal
 *.db-shm

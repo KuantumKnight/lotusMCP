@@ -10,7 +10,7 @@ LotusMCP is an autonomous CTF case-management MCP server that bridges an LLM to 
 
 - Full architecture and the phase roadmap: `ARCHITECTURE.md` (§7 = phase plan).
 - Repo root in this Kali workspace: `/home/katana/Desktop/lotusMCP`
-- Main package: `lotusmcp/` — subpackages: `kernel/`, `ontology/`, `flag/`, `playbooks/`, `triage/`, `engine/`, `executor/`, `session/`, `gateway/`, `llm/`, `replay/`, `observability/`, `control_plane/`, `library/`, `demo/`, plus `kb.py` and `server.py` (stdio MCP entrypoint).
+- Main package: `lotusmcp/` — subpackages: `kernel/`, `ontology/`, `flag/`, `playbooks/`, `triage/`, `engine/`, `executor/`, `session/`, `gateway/`, `llm/`, `replay/`, `observability/`, `control_plane/`, `library/`, `ops/`, `demo/`, plus `kb.py` and `server.py` (stdio MCP entrypoint).
 - Tests: `tests/` — direct `__main__` runners, full suite green as of latest run.
 - Git: branch `main`, clean working tree expected after each slice; use `git log --oneline -20` for the current latest commit because this handoff is updated incrementally.
 - Author identity for this repo: **KuantumKnight <msarvesh.dav@gmail.com>** — see §4.
@@ -22,7 +22,7 @@ LotusMCP is an autonomous CTF case-management MCP server that bridges an LLM to 
 **Everything except real solved-case collection/live validation is now built/tested in this Kali workspace.** FULL execution is host-only by user instruction: use this exact Kali machine; do not use Docker/Podman/venv execution paths. Full direct test suite green.
 
 ### Phase 0 — Case Kernel (DONE)
-`kernel/` — append-only hash-chained event log (`log.py`, `canonical.py`, `events.py`) with per-case host advisory locking and tail reload under lock, deterministic projector → SQLite (`projector`/graph), `state.py`, `case.py`. `ontology/identity.py` (natural-key identity), `kb.py`. Stdio MCP `server.py`. Replay-equivalence, tamper-detection, and stale-tail concurrency tests pass.
+`kernel/` — append-only hash-chained event log (`log.py`, `canonical.py`, `events.py`) with LotusC14N-v1 strict canonical JSON, per-case host advisory locking and tail reload under lock, deterministic projector → SQLite (`projector`/graph), `state.py`, `case.py`. `ontology/identity.py` (natural-key identity), `kb.py`. Stdio MCP `server.py`. Replay-equivalence, tamper-detection, canonicalization, and stale-tail concurrency tests pass.
 
 ### Phase 2 — Redaction + Flags + Control Plane (DONE)
 - Redaction choke `kernel/redaction.py`: content-addressed `«SECRET:kind:tag»` handles, flag-aware, mandatory serializer choke, redact-before-hash (secrets never touch the log).
@@ -85,9 +85,9 @@ LotusMCP is an autonomous CTF case-management MCP server that bridges an LLM to 
 ## 3. What's left
 
 1. **Collect real solved cases / authorized live validation** — calibration tooling exists, but meaningful tuning needs actual solved case logs.
-2. Optional hardening/deployment work if the user changes the host-only constraint: rootless Podman/gVisor/netns/proxy. Current instruction is not to use these.
+2. Optional deployment hardening if packaging beyond this Kali host: rootless Podman/gVisor/netns/proxy for LotusMCP itself. Current best-practice mode is host-native LotusMCP plus isolated benchmark/lab targets when those targets are supplied as containers.
 
-Recommended next step if continuing this work: run against authorized lab targets with signed `scope.json` and collect SOLVED case logs for calibration.
+Recommended next step if continuing this work: run against authorized lab targets or NYU CTF Bench development challenges with signed `scope.json` and collect solved/failed case logs for calibration. See `docs/OPERATOR_RUNBOOK.md` and `docs/BENCHMARKING.md`.
 
 ---
 
@@ -115,5 +115,5 @@ Recommended next step if continuing this work: run against authorized lab target
 1. Read `ARCHITECTURE.md` first for the design philosophy and full phase plan (§7).
 2. Run the test suite (or a sample of it) per §4 to confirm the snapshot above is still accurate — memories/handoffs are point-in-time, code may have moved on.
 3. Check `git log --oneline -20` and `git status` to see if work has continued since commit `8b6a9c2`.
-4. If picking up new work: the remaining meaningful work is empirical calibration from real solved cases or authorized live-target validation.
+4. If picking up new work: the remaining meaningful work is empirical calibration from real solved cases or authorized live-target/benchmark validation.
 5. Follow the git/commit and testing conventions in §4 exactly — they've been corrected by the user before and are firm preferences, not suggestions.

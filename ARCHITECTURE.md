@@ -589,11 +589,13 @@ cases/<case_id>/
 
 ## 7. Build roadmap
 
-- **Phase 0 — Case Kernel.** ✅ *Done in this repo.* Single serializer, per-case
-  host advisory lock with tail reload under lock, hash chain, ONE ontology + id
-  function, synchronous SQLite projector, bounded `STATE.md`, stdio MCP facade
+- **Phase 0 — Case Kernel.** ✅ *Done in this repo.* Single serializer,
+  LotusC14N-v1 strict canonical JSON, per-case host advisory lock with tail
+  reload under lock, hash chain, ONE ontology + id function, synchronous SQLite
+  projector, bounded `STATE.md`, stdio MCP facade
   (`create_case`/`get_state`/`kb_query`/`kb_get`), replay-equivalence + tamper +
-  stale-tail concurrency CI tests. No Kali — synthetic events.
+  canonicalization + stale-tail concurrency CI tests. No Kali — synthetic
+  events.
 - **Phase 1 — Safe Executor MVP (recon only).** Host-native Kali backend now
   executes validated `port_scan`/`http_probe`/`dir_bruteforce` argv directly on
   the operator's Kali machine with `shell=False`, strict typed argv, host
@@ -630,3 +632,12 @@ cases/<case_id>/
   stay low-friction; new adapters (define argv/egress) require a signed
   `adapter_review` manifest and still land through normal code review, never as
   dynamically loaded MCP behavior.
+
+## 8. Evaluation policy
+
+LotusMCP itself runs host-native for normal Kali operation. Benchmark targets may
+run in Docker/Compose when the benchmark supplies them that way; in that case the
+container is the disposable target boundary and the host `cases/` directory is
+the durable audit source. NYU CTF Bench is a suitable repeatable benchmark path:
+use its development split for tuning/calibration, reserve the test split for
+scoring, and keep one signed LotusMCP `scope.json` per target exposure.
