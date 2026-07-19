@@ -12,7 +12,7 @@ LotusMCP is an autonomous CTF case-management MCP server that bridges an LLM to 
 - Repo root in this Kali workspace: `/home/katana/Desktop/lotusMCP`
 - Main package: `lotusmcp/` — subpackages: `kernel/`, `ontology/`, `flag/`, `playbooks/`, `triage/`, `engine/`, `executor/`, `session/`, `gateway/`, `llm/`, `replay/`, `observability/`, `control_plane/`, `library/`, `demo/`, plus `kb.py` and `server.py` (stdio MCP entrypoint).
 - Tests: `tests/` — direct `__main__` runners, full suite green as of latest run.
-- Git: branch `main`, clean working tree, up to date with `origin/main`. Latest commit: `8b6a9c2` (signed adapter-review workflow).
+- Git: branch `main`, clean working tree expected after each slice; use `git log --oneline -20` for the current latest commit because this handoff is updated incrementally.
 - Author identity for this repo: **KuantumKnight <msarvesh.dav@gmail.com>** — see §4.
 
 ---
@@ -22,7 +22,7 @@ LotusMCP is an autonomous CTF case-management MCP server that bridges an LLM to 
 **Everything except real solved-case collection/live validation is now built/tested in this Kali workspace.** FULL execution is host-only by user instruction: use this exact Kali machine; do not use Docker/Podman/venv execution paths. Full direct test suite green.
 
 ### Phase 0 — Case Kernel (DONE)
-`kernel/` — append-only hash-chained event log (`log.py`, `canonical.py`, `events.py`), deterministic projector → SQLite (`projector`/graph), `state.py`, `case.py`. `ontology/identity.py` (natural-key identity), `kb.py`. Stdio MCP `server.py`. Replay-equivalence + tamper-detection tests pass.
+`kernel/` — append-only hash-chained event log (`log.py`, `canonical.py`, `events.py`) with per-case host advisory locking and tail reload under lock, deterministic projector → SQLite (`projector`/graph), `state.py`, `case.py`. `ontology/identity.py` (natural-key identity), `kb.py`. Stdio MCP `server.py`. Replay-equivalence, tamper-detection, and stale-tail concurrency tests pass.
 
 ### Phase 2 — Redaction + Flags + Control Plane (DONE)
 - Redaction choke `kernel/redaction.py`: content-addressed `«SECRET:kind:tag»` handles, flag-aware, mandatory serializer choke, redact-before-hash (secrets never touch the log).

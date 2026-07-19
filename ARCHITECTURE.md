@@ -589,10 +589,11 @@ cases/<case_id>/
 
 ## 7. Build roadmap
 
-- **Phase 0 — Case Kernel + walking skeleton.** ✅ *Done in this repo.* Single serializer,
-  hash chain, ONE ontology + id function, synchronous SQLite projector, bounded
-  `STATE.md`, stdio MCP facade (`create_case`/`get_state`/`kb_query`/`kb_get`),
-  replay-equivalence + tamper CI tests. No Kali — synthetic events.
+- **Phase 0 — Case Kernel.** ✅ *Done in this repo.* Single serializer, per-case
+  host advisory lock with tail reload under lock, hash chain, ONE ontology + id
+  function, synchronous SQLite projector, bounded `STATE.md`, stdio MCP facade
+  (`create_case`/`get_state`/`kb_query`/`kb_get`), replay-equivalence + tamper +
+  stale-tail concurrency CI tests. No Kali — synthetic events.
 - **Phase 1 — Safe Executor MVP (recon only).** Host-native Kali backend now
   executes validated `port_scan`/`http_probe`/`dir_bruteforce` argv directly on
   the operator's Kali machine with `shell=False`, strict typed argv, host

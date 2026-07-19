@@ -6,12 +6,14 @@ bytes), fsyncs, and maintains a `seq -> byte_offset` index. Because nothing
 ever mutates an existing byte range, concurrent tools appending distinct
 events can never clobber each other — the CASE.md race is structurally gone.
 
-Skeleton note: cross-process safety here is a threading.Lock + O_APPEND.
-Production replaces this with a per-case single serializer process and a
-portalocker advisory lock (see ARCHITECTURE.md, Case Kernel).
+Writes are serialized with an in-process lock plus a per-case advisory file
+lock. The append path reloads the chain tail while holding that process lock,
+so two already-open store handles cannot reuse stale seq/hash state.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
+import fcntl
 import hashlib
 import json
 import os
@@ -45,12 +47,23 @@ class EventStore:
         self.dir.mkdir(parents=True, exist_ok=True)
         self.path = self.dir / "events.jsonl"
         self.idx = self.dir / "events.idx"
+        self.lock_path = self.dir / "events.lock"
         # Mandatory serializer choke: no payload reaches disk un-redacted.
         # A secret-free payload is passed through unchanged, so hashes for
         # clean events (and thus replay-equivalence) are unaffected.
         self.redactor = redactor if redactor is not None else Redactor()
         self._lock = threading.Lock()
         self._seq, self._hash = self._load_tail()
+
+    @contextmanager
+    def _process_lock(self):
+        """Serialize appenders across host processes for this case directory."""
+        with open(self.lock_path, "a+", encoding="utf-8") as lock_file:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
     def _load_tail(self) -> tuple[int, str]:
         seq, last_hash = -1, GENESIS_HASH
@@ -67,56 +80,63 @@ class EventStore:
     def append(self, draft: EventDraft) -> Dict[str, Any]:
         draft.validate()
         with self._lock:
-            seq = self._seq + 1
-            # Redact BEFORE hashing/writing so sha256(stored) stays valid and
-            # plaintext secrets never touch disk (ARCHITECTURE.md §Safety.4).
-            payload, detected = self.redactor.redact_payload(draft.payload)
-            env: Dict[str, Any] = {
-                "seq": seq,
-                "event_id": _ulid(),
-                "case_id": self.dir.name,
-                "ts": _now_iso(),
-                "type": draft.type,
-                "schema_v": SCHEMA_V,
-                "actor": draft.actor,
-                "payload": payload,
-                "prev_hash": self._hash,
-            }
-            for k in ("confidence", "idempotency_key", "causation_id",
-                      "correlation_id", "provenance"):
-                v = getattr(draft, k)
-                if v is not None:
-                    env[k] = v
-            # Merge any redactions the caller already applied (e.g. the Executor
-            # tee) with those the choke detected; dedup by handle, stable order.
-            merged = {r["handle"]: r for r in (draft.redactions or [])}
-            for r in detected:
-                merged.setdefault(r["handle"], r)
-            if merged:
-                env["redactions"] = sorted(merged.values(), key=lambda r: r["handle"])
+            with self._process_lock():
+                # Another process may have appended after this EventStore was
+                # constructed. Reload under the process lock before assigning
+                # the next seq/hash.
+                self._seq, self._hash = self._load_tail()
+                seq = self._seq + 1
+                # Redact BEFORE hashing/writing so sha256(stored) stays valid and
+                # plaintext secrets never touch disk (ARCHITECTURE.md §Safety.4).
+                payload, detected = self.redactor.redact_payload(draft.payload)
+                env: Dict[str, Any] = {
+                    "seq": seq,
+                    "event_id": _ulid(),
+                    "case_id": self.dir.name,
+                    "ts": _now_iso(),
+                    "type": draft.type,
+                    "schema_v": SCHEMA_V,
+                    "actor": draft.actor,
+                    "payload": payload,
+                    "prev_hash": self._hash,
+                }
+                for k in ("confidence", "idempotency_key", "causation_id",
+                          "correlation_id", "provenance"):
+                    v = getattr(draft, k)
+                    if v is not None:
+                        env[k] = v
+                # Merge any redactions the caller already applied (e.g. the
+                # Executor tee) with those the choke detected; dedup by handle,
+                # stable order.
+                merged = {r["handle"]: r for r in (draft.redactions or [])}
+                for r in detected:
+                    merged.setdefault(r["handle"], r)
+                if merged:
+                    env["redactions"] = sorted(merged.values(),
+                                               key=lambda r: r["handle"])
 
-            if len(canonical_bytes(env["payload"])) > MAX_PAYLOAD_BYTES:
-                raise ValueError(
-                    "payload exceeds 16 KB; store an artifact and reference it by hash"
-                )
+                if len(canonical_bytes(env["payload"])) > MAX_PAYLOAD_BYTES:
+                    raise ValueError(
+                        "payload exceeds 16 KB; store an artifact and reference it by hash"
+                    )
 
-            body = {k: v for k, v in env.items() if k not in _UNSIGNED}
-            digest = hashlib.sha256(
-                self._hash.encode("utf-8") + canonical_bytes(body)
-            ).hexdigest()
-            env["hash"] = "sha256:" + digest
+                body = {k: v for k, v in env.items() if k not in _UNSIGNED}
+                digest = hashlib.sha256(
+                    self._hash.encode("utf-8") + canonical_bytes(body)
+                ).hexdigest()
+                env["hash"] = "sha256:" + digest
 
-            line = canonical(env) + "\n"
-            with open(self.path, "a", encoding="utf-8") as f:
-                offset = f.tell()
-                f.write(line)
-                f.flush()
-                os.fsync(f.fileno())
-            with open(self.idx, "a", encoding="utf-8") as ix:
-                ix.write(f"{seq} {offset}\n")
+                line = canonical(env) + "\n"
+                with open(self.path, "a", encoding="utf-8") as f:
+                    offset = f.tell()
+                    f.write(line)
+                    f.flush()
+                    os.fsync(f.fileno())
+                with open(self.idx, "a", encoding="utf-8") as ix:
+                    ix.write(f"{seq} {offset}\n")
 
-            self._seq, self._hash = seq, env["hash"]
-            return env
+                self._seq, self._hash = seq, env["hash"]
+                return env
 
     def iter_events(self) -> Iterator[Dict[str, Any]]:
         if not self.path.exists():
