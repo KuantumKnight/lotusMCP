@@ -50,6 +50,7 @@ def test_builtin_specs_have_unique_ports_or_run_sequentially():
         "2021q-web-gatekeeping",
         "2021q-web-no_pass_needed",
         "2021q-web-poem_collection",
+        "2021q-web-securinotes",
         "2023f-web-shreeramquest",
         "2023q-web-philanthropy",
         "2023q-web-smug_dino",
