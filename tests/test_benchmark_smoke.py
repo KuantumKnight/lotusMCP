@@ -50,6 +50,7 @@ def test_builtin_specs_have_unique_ports_or_run_sequentially():
         "2021q-web-poem_collection",
         "2023f-web-shreeramquest",
         "2023q-web-philanthropy",
+        "2023q-web-smug_dino",
     } <= set(SPECS)
     for cid, spec in SPECS.items():
         assert spec.challenge_id == cid
