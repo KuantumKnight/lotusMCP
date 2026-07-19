@@ -52,6 +52,25 @@ containers to be reset between runs.
 7. Import solved/failed case logs into the Technique Library calibration pass.
 8. Only after tuning on the development split, evaluate on the test split.
 
+## Built-in smoke runner
+
+After sparse-checking out the NYU CTF Bench repository and the selected
+development challenge, this repository includes a repeatable smoke command for
+`2013q-web-guess_harder`:
+
+```bash
+PYTHONPATH=. python -m lotusmcp.ops.benchmark_smoke \
+  --bench-dir "$PWD/benchmarks/NYU_CTF_Bench_sparse" \
+  --cases-dir /tmp/lotus_bench_cases \
+  --results /tmp/lotus_bench_results.jsonl \
+  --case-id nyu-dev-guessharder-smoke \
+  --manage-target
+```
+
+Run it as root or through `sudo env PYTHONPATH=...` if this host requires sudo
+for Docker and privileged localhost scans. The aggregate result omits the raw
+flag; the case log remains the authoritative audit record.
+
 ## Minimal benchmark-result schema
 
 Store benchmark results outside case logs, for example in

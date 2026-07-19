@@ -179,7 +179,8 @@ Operator docs:
 - [`docs/OPERATOR_RUNBOOK.md`](docs/OPERATOR_RUNBOOK.md) — host readiness,
   scope signing, launch, anchoring, calibration.
 - [`docs/BENCHMARKING.md`](docs/BENCHMARKING.md) — best-practice live/benchmark
-  validation workflow, including NYU CTF Bench target containers.
+  validation workflow, including NYU CTF Bench target containers and the
+  `lotusmcp.ops.benchmark_smoke` command.
 
 ---
 
