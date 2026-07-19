@@ -111,6 +111,21 @@ FULL execution still requires a per-case signed `scope.json`; without one,
 interactive sessions fail closed and scoped actions are refused by the verified
 scope choke.
 
+Optional read-only dashboard/SSE stream:
+
+```bash
+PYTHONPATH=. python -m lotusmcp.observability.dashboard \
+  --cases-dir "$PWD/cases" --host 127.0.0.1 --port 8765
+```
+
+Useful endpoints:
+
+- `/` — case list
+- `/case/<case_id>/state` — current `STATE.md`
+- `/case/<case_id>/metrics` — OpenMetrics text
+- `/case/<case_id>/events?after=<seq>` — recent JSON events
+- `/case/<case_id>/stream?after=<seq>` — server-sent event tail
+
 Register the stdio server with an MCP client (Claude Desktop / Claude Code):
 
 ```jsonc

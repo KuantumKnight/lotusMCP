@@ -617,8 +617,9 @@ cases/<case_id>/
   LITE `search`/`fetch` bridge (~13-tool surface). *Load test: 5000-endpoint case renders
   `STATE.md` <100 ms and ≤6.5k tokens.*
 - **Phase 6 — Replay, writeup, observability.** Two-stage writeup (deterministic IR +
-  citation verifier exiling unsupported sentences); `case_replay`/`case_diff`; SSE
-  dashboard + OpenMetrics; two-tier durability SLA.
+  citation verifier exiling unsupported sentences); `case_replay`/`case_diff`;
+  stdlib read-only dashboard with SSE event tail + OpenMetrics; two-tier
+  durability SLA.
 - **Phase 7 — Cross-case Technique Library + calibration.** Allowlist generalization +
   leak diff + human review; Thompson-sampled recommender; escalation UX; calibrate all
   constants against SOLVED medium/hard corpora.
