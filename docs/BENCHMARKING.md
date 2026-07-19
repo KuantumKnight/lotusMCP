@@ -55,8 +55,8 @@ containers to be reset between runs.
 ## Built-in smoke runner
 
 After sparse-checking out the NYU CTF Bench repository and the selected
-development challenge, this repository includes a repeatable smoke command for
-`2013q-web-guess_harder`:
+development challenge directories, this repository includes a repeatable smoke
+command for built-in deterministic web specs.
 
 ```bash
 PYTHONPATH=. python -m lotusmcp.ops.benchmark_smoke \
@@ -64,6 +64,20 @@ PYTHONPATH=. python -m lotusmcp.ops.benchmark_smoke \
   --cases-dir /tmp/lotus_bench_cases \
   --results /tmp/lotus_bench_results.jsonl \
   --case-id nyu-dev-guessharder-smoke \
+  --challenge 2013q-web-guess_harder \
+  --manage-target
+```
+
+Run the current built-in batch (`2013q-web-guess_harder`, `2016q-web-mfw`,
+`2016q-web-i_got_id`) sequentially:
+
+```bash
+PYTHONPATH=. python -m lotusmcp.ops.benchmark_smoke \
+  --bench-dir "$PWD/benchmarks/NYU_CTF_Bench_sparse" \
+  --cases-dir /tmp/lotus_bench_cases \
+  --results /tmp/lotus_bench_results.jsonl \
+  --case-id nyu-dev-web-batch \
+  --batch \
   --manage-target
 ```
 

@@ -8,7 +8,7 @@ from lotusmcp.control_plane.keyring import SigningKey
 from lotusmcp.control_plane.anchor import create_anchor
 from lotusmcp.engine.budget import BudgetLedger
 from lotusmcp.kernel.case import Case
-from lotusmcp.ops.benchmark_smoke import EXPECTED_FLAG, build_result
+from lotusmcp.ops.benchmark_smoke import SPECS, build_result
 
 
 def test_aggregate_result_omits_raw_flag():
@@ -18,6 +18,7 @@ def test_aggregate_result_omits_raw_flag():
         anchor = create_anchor(case.store, SigningKey.generate())
         result = build_result(
             case=case,
+            challenge_id="2013q-web-guess_harder",
             case_id="bench",
             solved=True,
             budget=BudgetLedger(),
@@ -28,7 +29,16 @@ def test_aggregate_result_omits_raw_flag():
     assert result["benchmark"] == "nyu-ctf-bench"
     assert result["solved"] is True and result["flag_verified"] is True
     assert "audit_anchor" in result and result["chain_ok"] is True
-    assert EXPECTED_FLAG not in text
+    assert all(spec.expected_flag not in text for spec in SPECS.values())
+
+
+def test_builtin_specs_have_unique_ports_or_run_sequentially():
+    assert {"2013q-web-guess_harder", "2016q-web-mfw", "2016q-web-i_got_id"} <= set(SPECS)
+    for cid, spec in SPECS.items():
+        assert spec.challenge_id == cid
+        assert spec.expected_flag
+        assert spec.exploit_script.strip()
+        assert spec.probe_path.startswith("/")
 
 
 if __name__ == "__main__":
