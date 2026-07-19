@@ -46,6 +46,7 @@ def test_builtin_specs_have_unique_ports_or_run_sequentially():
         "2017q-web-orange",
         "2017q-web-orangev2",
         "2021q-web-gatekeeping",
+        "2021q-web-no_pass_needed",
         "2021q-web-poem_collection",
         "2023f-web-shreeramquest",
         "2023q-web-philanthropy",
