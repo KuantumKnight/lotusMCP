@@ -33,6 +33,11 @@ Benchmark-target check, including Docker/Compose:
 PYTHONPATH=. python -m lotusmcp.ops.doctor --benchmark
 ```
 
+If Docker reports that the daemon socket exists but the current user needs sudo,
+run benchmark target lifecycle commands as `sudo docker ...` / `sudo
+docker-compose ...`, or add the operator user to the `docker` group only if that
+root-equivalent access is acceptable on this host.
+
 Everything:
 
 ```bash
@@ -86,7 +91,27 @@ PYTHONPATH=. python -m lotusmcp.observability.dashboard \
   --cases-dir "$PWD/cases" --host 127.0.0.1 --port 8765
 ```
 
-## 5. After a solve
+## 5. Benchmark target containers
+
+For benchmark targets that ship Docker Compose files, start the target from the
+benchmark challenge directory. Use `sudo` when required by the local Docker
+socket policy:
+
+```bash
+sudo docker-compose up -d
+sudo docker-compose ps
+```
+
+Map the exposed host/port into `scope.json`, usually `127.0.0.1:<published-port>`
+for local benchmark containers.
+
+Tear the target down after the run:
+
+```bash
+sudo docker-compose down -v
+```
+
+## 6. After a solve
 
 Create an audit anchor:
 

@@ -7,6 +7,7 @@ import json
 import os
 import platform
 import shutil
+import subprocess
 import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -27,6 +28,30 @@ def _which(name: str) -> Optional[str]:
 
 def _module_exists(name: str) -> bool:
     return importlib.util.find_spec(name) is not None
+
+
+def _docker_daemon_detail() -> tuple[bool, str]:
+    docker = _which("docker")
+    if not docker:
+        return False, "docker CLI missing"
+    try:
+        p = subprocess.run(
+            [docker, "info", "--format", "{{.ServerVersion}}"],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=5,
+        )
+    except Exception as e:  # noqa: BLE001 - diagnostic must never crash
+        return False, f"docker info failed: {e}"
+    if p.returncode == 0:
+        return True, f"daemon reachable as current user: {p.stdout.strip()}"
+    sock = Path("/var/run/docker.sock")
+    if sock.exists():
+        return True, "daemon socket exists; current user may need sudo or docker-group access"
+    msg = (p.stderr or p.stdout).strip().splitlines()
+    return False, msg[-1] if msg else "daemon not reachable"
 
 
 def _check_path(path: str, *, required: bool, name: str) -> Check:
@@ -78,6 +103,9 @@ def run_checks(
     )
     checks.append(Check("container-runtime", bool(docker or podman), benchmark,
                         docker or podman or "missing"))
+    daemon_ok, daemon_detail = _docker_daemon_detail()
+    checks.append(Check("docker-daemon", daemon_ok, benchmark,
+                        daemon_detail))
     checks.append(Check("docker-compose", bool(compose), benchmark,
                         compose or "missing"))
     return checks

@@ -104,6 +104,10 @@ Check this host before operating:
 PYTHONPATH=. python -m lotusmcp.ops.doctor --all
 ```
 
+If the doctor reports that the Docker daemon socket exists but needs elevated
+access, use `sudo docker-compose` for benchmark targets or deliberately grant
+the operator user docker-group access.
+
 For FULL host execution mode, launch through `lotusmcp.launcher` instead of
 `lotusmcp.server`. This wires `propose_and_run` to this machine's Kali tools and
 `session_edit_run` to the host TCP/Python session backend:

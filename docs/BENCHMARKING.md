@@ -36,7 +36,8 @@ containers to be reset between runs.
 ## Suggested NYU CTF Bench workflow
 
 1. Use the development split first. Treat it as tuning/calibration data.
-2. Start one challenge target with the benchmark’s Docker Compose instructions.
+2. Start one challenge target with the benchmark’s Docker Compose instructions
+   (`sudo docker-compose ...` if this host requires sudo for Docker).
 3. Map the exposed service to a loopback host/port.
 4. Create a LotusMCP case and signed `scope.json` for only that host/port.
 5. Run LotusMCP FULL mode against the target.

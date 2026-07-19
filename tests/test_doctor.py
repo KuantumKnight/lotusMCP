@@ -16,6 +16,7 @@ def test_core_checks_are_structured():
     assert by_name["cryptography"].required
     assert not by_name["kali-tool:nmap"].required
     assert not by_name["container-runtime"].required
+    assert not by_name["docker-daemon"].required
 
 
 def test_all_mode_emits_json_and_returns_status(capsys=None):
