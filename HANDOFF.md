@@ -1,6 +1,6 @@
 # LotusMCP — Complete Handoff
 
-Single source of truth for picking up this project cold, in a new session/agent with no prior memory. Written 2026-07-15. Verify anything time-sensitive against current code/git before acting on it — this is a snapshot.
+Single source of truth for picking up this project cold, in a new session/agent with no prior memory. Originally written 2026-07-15; updated 2026-07-19 after host-only Kali execution work. Verify anything time-sensitive against current code/git before acting on it — this is a snapshot.
 
 ---
 
@@ -9,17 +9,17 @@ Single source of truth for picking up this project cold, in a new session/agent 
 LotusMCP is an autonomous CTF case-management MCP server that bridges an LLM to Kali Linux tooling. Core design principle: **the append-only, hash-chained event log is the only source of truth; the entity graph and STATE.md are pure, deterministic folds of that log.** Nothing is stored that can't be rebuilt by replaying the log.
 
 - Full architecture and the phase roadmap: `ARCHITECTURE.md` (§7 = phase plan).
-- Repo root: `E:\Career_Development\Projects\lotusMCP`
+- Repo root in this Kali workspace: `/home/katana/Desktop/lotusMCP`
 - Main package: `lotusmcp/` — subpackages: `kernel/`, `ontology/`, `flag/`, `playbooks/`, `triage/`, `engine/`, `executor/`, `session/`, `gateway/`, `llm/`, `replay/`, `observability/`, `control_plane/`, `library/`, `demo/`, plus `kb.py` and `server.py` (stdio MCP entrypoint).
-- Tests: `tests/` — 43 files, ~42 suites, ~320+ individual test functions, all green as of last run.
-- Git: branch `main`, clean working tree, up to date with `origin/main`. Latest commit: `815b0e3` (Phase 8, community playbooks).
+- Tests: `tests/` — direct `__main__` runners, full suite green as of latest run.
+- Git: branch `main`, clean working tree, up to date with `origin/main`. Latest commit: `8b6a9c2` (signed adapter-review workflow).
 - Author identity for this repo: **KuantumKnight <msarvesh.dav@gmail.com>** — see §4.
 
 ---
 
 ## 2. Build state — what's done, phase by phase
 
-**Everything that is testable on a stdlib-only Windows box with no Kali/LLM/network is DONE.** Only external-dependency-bound work remains (see §3). ~42 test suites, all green.
+**Everything except real solved-case calibration is now built/tested in this Kali workspace.** FULL execution is host-only by user instruction: use this exact Kali machine; do not use Docker/Podman/venv execution paths. Full direct test suite green.
 
 ### Phase 0 — Case Kernel (DONE)
 `kernel/` — append-only hash-chained event log (`log.py`, `canonical.py`, `events.py`), deterministic projector → SQLite (`projector`/graph), `state.py`, `case.py`. `ontology/identity.py` (natural-key identity), `kb.py`. Stdio MCP `server.py`. Replay-equivalence + tamper-detection tests pass.
@@ -37,17 +37,19 @@ LotusMCP is an autonomous CTF case-management MCP server that bridges an LLM to 
 - `llm/` package: `LLMGateway` — the ONE metered/cached/schema-enforcing LLM call site. Charges the budget ledger only on cache miss (so replays are free and decisions stay reproducible); typed schema enforcement with retry-on-mismatch; offline `DeterministicProvider` (rule-based, no network/key needed) behind a `Provider` Protocol so a real provider drops in later. Wired into `loop.py` as optional `gateway=` (default None = unchanged deterministic behavior); everything the LLM returns is advisory only.
 - Demos: `demo/decide_loop.py`, `demo/autonomous_solve.py`.
 
-### Phase 1 — Executor boundary (pure-Python half DONE; Linux/Kali half NOT done)
+### Phase 1 — Executor boundary (DONE for host-only Kali)
 `executor/`:
 - `argv.py`: hardened `build_argv(action, target)` for port_scan/http_probe/dir_bruteforce. Strict typed schema, allowlisted flags/wordlists only, `--` end-of-options, no shell, no process spawn — output is always an argv list. Untrusted input → `ArgvRejected`.
 - `parse.py`: total parsers for nmap XML / http response / ffuf JSON → EventDrafts, hardened against untrusted input (size caps, DTD/entity refusal).
-- `replay.py`: `ReplayExecutor` implements the loop's `Executor` protocol (plan → stdout → parse → events); `backend` is swappable (`FixtureBackend` now, real subprocess runner in prod). **Swapping the backend is the only change needed to go live on Kali.**
+- `replay.py`: `ReplayExecutor` implements the loop's `Executor` protocol (plan → stdout → parse → events); `backend` is swappable.
+- `executor/sandbox.py` (commit `81fa61e`): host-only `SubprocessBackend` runs validated argv directly on this Kali machine with `shell=False`, scrubbed env, stdout cap, timeout, and a second backend-local scope check before spawn. `backend_from_env()` only supports `subprocess`/`host`.
+- `launcher.py` wires `propose_and_run` to `ReplayExecutor(backend_from_env(...))`.
 - Scope wiring done: `Loop(scope=Scope|None)` — a verified `Scope` gates every action in ACT before the Executor runs (out-of-scope → refused, dead-ended, never re-proposed).
-- **Remaining (Linux-only):** rootless Podman + gVisor + dual-stack default-DROP nftables netns + audited forward proxy; write a real `SubprocessBackend` and drop it behind `ReplayExecutor`. Also worth adding: a second in-sandbox `in_scope()` check as belt-and-suspenders.
+- User explicitly said: **do not use any other venv or Docker; use this exact machine.** Podman/runsc were installed earlier but are not used by the project.
 
-### Phase 4 — Regime B interactive sessions (pure-Python core DONE; Linux/Kali half NOT done)
+### Phase 4 — Regime B interactive sessions (DONE for host-only Kali)
 `engine/regime.py` routes EXPLOIT/POST_EXPLOIT on pwn/rev/crypto/web to INTERACTIVE. `session/` package: `Tube` protocol + offline `ScriptedTube`, `Script`/`RunOutput`, `ScriptAuthor`/`ScriptRunner` protocols with deterministic offline impls. `InteractiveSession` = per-session workspace, author→run→fold loop, enforces scope/budget/redaction. `session/manager.py` (`SessionManager`, live per-case registry) and `session/service.py` (`SessionService`, fail-closed MCP policy — opens only with a configured sandbox backend AND a signature-verified Scope). MCP tools: `session_edit_run`, `session_close`, `session_list`.
-**Remaining (Linux/Kali-only):** real PTY/socket `Tube`, `LLMGateway`-backed `ScriptAuthor`, sandboxed `ScriptRunner` executing real pwntools/angr/z3/Sage/Ghidra-headless — all slot in behind existing Protocols via `SESSIONS.configure(...)`.
+`session/live.py` (commit `b3b0ba9`): host-native `TCPTube`, `HostPythonScriptRunner`, and `host_session_factory`; uses stdlib sockets and host `python3`, no pwntools dependency, no venv. `launcher.py` wires `SESSIONS.configure(host_session_factory)`. Scripts receive `LOTUS_TARGET_HOST`/`LOTUS_TARGET_PORT`/`LOTUS_TARGET_ID`/`LOTUS_TARGET_DISPLAY`.
 
 ### Phase 5 — Context discipline / ChatGPT LITE parity (DONE)
 - `engine/salience.py`: decomposable salience scoring/ranking (`Salience(s_conf/s_hyp/s_pathflag/s_deadend/last_seq)`, weights+τ centralized, recency = exp(−(tip−last_seq)/τ)).
@@ -60,34 +62,32 @@ LotusMCP is an autonomous CTF case-management MCP server that bridges an LLM to 
 - **Tool counts hit the design target: LITE=15, FULL=24.**
 - Test suites: `test_salience`(7), `test_resume`(5), `test_gateway_resolver`(7), `test_state_envelope`(2), `test_claim_compaction`(4), `test_search_fts`(6), `test_tool_profile`(10), `test_jobs`(10).
 
-### Phase 6 — Replay, writeup, durability (core DONE; SSE dashboard NOT done)
+### Phase 6 — Replay, writeup, durability, observability (DONE)
 - `replay/state.py`: `state_at(case,seq)` (fold log prefix → phase+graph snapshot) and `diff(case,a,b)`.
 - `replay/writeup.py`: two-stage writeup — every claim in the IR carries a citation into the log; uncited/hallucinated claims get exiled as `writeup.claim_rejected` events. LLM narrates, verifier disposes.
 - `observability/metrics.py`: pure-fold OpenMetrics text.
 - `replay/repro.py`: `build_repro(case)` — deterministic bash repro script folded from the validated argv command trail (secrets stay redacted, flags never echoed).
 - `kernel/blobstore.py` (commit `4128771`): Tier-B content-addressed (sha256) blob store for redacted artifacts under `artifacts/blobs/`, manifest `artifacts/versions.json`. Age-window (recon/enumerate 7d, exploit/post_exploit/else 30d) + LRU-to-cap (2GB) eviction; pinned blobs never evicted; evicted blobs keep their hash + a degraded-status note so citations never dangle; `set_version` fails loud (`DurabilityError`) if a required blob is gone. `Case.blobs` lazy property. MCP: `kb_artifact`(LITE), `case_gc`(FULL).
 - `replay/repro.py` (commit `c865db7`): folds the validated argv command trail (`command.requested`/`command.completed` events) into a deterministic bash repro script — grouped by phase, `shlex.quote`d, secrets stay redacted, flags never echoed. MCP: `case_repro`(LITE).
-- Test suites: `test_replay_writeup`(6), `test_metrics`(5), `test_repro`(6), `test_blobstore`(10).
-- **Remaining:** SSE dashboard (async server infra, not cleanly testable on this box).
+- `observability/dashboard.py` (commit `5a0eba5`): stdlib read-only dashboard + SSE tail. Endpoints: `/`, `/cases`, `/case/<cid>/state`, `/case/<cid>/metrics`, `/case/<cid>/events`, `/case/<cid>/stream`.
+- Test suites include `test_replay_writeup`(6), `test_metrics`(5), `test_repro`(6), `test_blobstore`(10), `test_dashboard`(4).
 
 ### Phase 7 — Cross-case Technique Library + calibration (DONE, commit `bc71887`)
 `lotusmcp/library/`: `TechniqueLibrary` lives OUTSIDE any case dir, cards keyed only by `(capability, category, param_class)` via `technique_id()` — no target/host/path/payload, so nothing leaks cross-case. Beta-posterior calibration per card (`alpha=wins+1`, `beta=losses+1`; `observe`/`observe_action` bump it), Thompson-sampling `suggest(phase?,category?,k=5,rng?)` (deterministic under seeded `random.Random`, mean-mode if `rng=None`), human-gated `promote(tid,reviewer)` (raises `KeyError` if never observed). Pure rebuildable fold of its own `library.jsonl`. `Loop(library=None)` optional hook: after ACT, `library.observe_action(action, phase, progressed)`. MCP: `technique_suggest`(LITE, unseeded), `technique_promote`(FULL). Test suite: `test_technique_library`(8).
 **Remaining:** constant calibration against a real SOLVED corpus (needs real case data).
 
-### Phase 8 — Community playbook lint + safe apply (DONE, commit `815b0e3`)
+### Phase 8 — Community playbook lint + safe apply + signed adapter review (DONE)
 `playbooks/community.py`: community playbooks are treated as DATA, not code. `lint_playbook(doc, known_rule_ids, known_caps)` never raises, fails loud (returns findings) on: unknown rule id, forbidden keys (`capability`/`kind`/`category`/`when`/`params`/`phase_gate`/`rationale` — new capabilities need signed review), out-of-range knobs (priority/yield/risk∈[0,1], cost>0, bool≠number), structural errors (not-an-object/no-rules/missing-name/duplicate-id). Only tunable keys: `priority/yield/cost/risk`/`enabled`. `apply_playbook(base_rules, doc)` raises `CommunityPlaybookError` unless lint-clean, else returns tuned rules via `dataclasses.replace` (vetted `capability`/`when` objects preserved identity). `playbooks/cli.py` `main(argv)`: operator-gated `lotus playbook lint|test` CLI. Untrusted playbook loading is deliberately NOT exposed on the MCP surface. Test suite: `test_community_playbook`(10).
-**Remaining:** signed-adapter review workflow + argv/egress definition process for brand-new adapters.
+`playbooks/adapter_review.py` + `control_plane.cli sign-adapter` (commit `8b6a9c2`): signed `adapter_review` manifests validate capability/category/tool/argv_schema/egress/reviewer and verify with trusted operator keys. This is an auditable approval artifact only; it does not dynamically load adapter code.
 
 ---
 
-## 3. What's left (all external-dependency-bound, not testable on this Windows dev box)
+## 3. What's left
 
-1. **Phase 1/4 Linux/Kali real-exec glue** — the actual sandbox: rootless Podman + gVisor + nftables netns + forward proxy; real `SubprocessBackend`; real PTY/socket `Tube`; LLMGateway-backed `ScriptAuthor`; sandboxed `ScriptRunner` for pwntools/angr/z3/Sage/Ghidra-headless. This is the single biggest remaining chunk — everything else is designed to slot behind existing Protocols with zero changes to calling code.
-2. **SSE dashboard** — async server infra (Phase 6).
-3. **Phase 7 calibration** — needs a real corpus of SOLVED cases to tune constants meaningfully.
-4. **Phase 8 signed-adapter review** — process/workflow for vetting new tool adapters (argv schema + egress definition), not yet built.
+1. **Phase 7 real calibration** — needs a real corpus of SOLVED cases to tune constants meaningfully.
+2. Optional hardening/deployment work if the user changes the host-only constraint: rootless Podman/gVisor/netns/proxy. Current instruction is not to use these.
 
-Recommended next step if continuing this work: start Phase 1 Linux-side sandbox on an actual Linux box (this Windows environment cannot test it), since it's the load-bearing dependency for going from "deterministic brain" to "actually runs tools against a live target."
+Recommended next step if continuing this work: run against authorized lab targets with signed `scope.json` and collect SOLVED case logs for calibration.
 
 ---
 
@@ -114,6 +114,6 @@ Recommended next step if continuing this work: start Phase 1 Linux-side sandbox 
 
 1. Read `ARCHITECTURE.md` first for the design philosophy and full phase plan (§7).
 2. Run the test suite (or a sample of it) per §4 to confirm the snapshot above is still accurate — memories/handoffs are point-in-time, code may have moved on.
-3. Check `git log --oneline -20` and `git status` to see if work has continued since commit `815b0e3`.
-4. If picking up new work: everything pure-Python is done through Phase 8; the natural next slice is Phase 1's Linux sandbox (needs an actual Linux box, not this Windows environment).
+3. Check `git log --oneline -20` and `git status` to see if work has continued since commit `8b6a9c2`.
+4. If picking up new work: the remaining meaningful work is empirical calibration from real solved cases or authorized live-target validation.
 5. Follow the git/commit and testing conventions in §4 exactly — they've been corrected by the user before and are firm preferences, not suggestions.
