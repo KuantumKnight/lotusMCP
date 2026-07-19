@@ -23,6 +23,7 @@ from lotusmcp.ops.benchmark_smoke import SPECS, SmokeConfig, run_smoke
 @dataclass(frozen=True)
 class MatrixConfig:
     bench_dir: Path
+    benchmark: str
     split: str
     cases_dir: Path
     results: Path
@@ -34,14 +35,20 @@ class MatrixConfig:
     keep_target: bool = False
 
 
-def dataset_path(bench_dir: Path, split: str) -> Path:
-    if split not in {"development", "test"}:
-        raise ValueError("split must be 'development' or 'test'")
-    return bench_dir / f"{split}_dataset.json"
+def dataset_path(bench_dir: Path, benchmark: str, split: str) -> Path:
+    if benchmark == "nyu-ctf-bench":
+        if split not in {"development", "test"}:
+            raise ValueError("NYU split must be 'development' or 'test'")
+        return bench_dir / f"{split}_dataset.json"
+    if benchmark == "ctf-dojo":
+        if split != "archive":
+            raise ValueError("CTF-Dojo split must be 'archive'")
+        return bench_dir / "ctf_archive.json"
+    raise ValueError("benchmark must be 'nyu-ctf-bench' or 'ctf-dojo'")
 
 
-def load_dataset(bench_dir: Path, split: str) -> Dict[str, Dict[str, Any]]:
-    path = dataset_path(bench_dir, split)
+def load_dataset(bench_dir: Path, benchmark: str, split: str) -> Dict[str, Dict[str, Any]]:
+    path = dataset_path(bench_dir, benchmark, split)
     raw = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
         raise ValueError(f"{path} must contain an object")
@@ -62,12 +69,17 @@ def iter_entries(dataset: Dict[str, Dict[str, Any]], *,
 
 
 def classify_case(bench_dir: Path, split: str, challenge_id: str,
-                  meta: Dict[str, Any]) -> Dict[str, Any]:
+                  meta: Dict[str, Any], *,
+                  benchmark: str = "nyu-ctf-bench") -> Dict[str, Any]:
     rel = Path(str(meta["path"]))
     root = bench_dir / rel
     checkout_present = root.exists()
     compose_present = (root / "docker-compose.yml").exists()
-    supported_smoke = split == "development" and challenge_id in SPECS
+    supported_smoke = (
+        benchmark == "nyu-ctf-bench"
+        and split == "development"
+        and challenge_id in SPECS
+    )
     if supported_smoke:
         status = "supported"
     elif not checkout_present:
@@ -78,6 +90,7 @@ def classify_case(bench_dir: Path, split: str, challenge_id: str,
         status = "needs_spec"
     return {
         "challenge_id": challenge_id,
+        "benchmark": benchmark,
         "split": split,
         "year": meta.get("year"),
         "event": meta.get("event"),
@@ -115,15 +128,23 @@ def write_json(path: Path, payload: Any) -> None:
 
 
 def run_matrix(config: MatrixConfig) -> Dict[str, Any]:
-    dataset = load_dataset(config.bench_dir, config.split)
+    dataset = load_dataset(config.bench_dir, config.benchmark, config.split)
     rows = [
-        classify_case(config.bench_dir, config.split, challenge_id, meta)
+        classify_case(
+            config.bench_dir,
+            config.split,
+            challenge_id,
+            meta,
+            benchmark=config.benchmark,
+        )
         for challenge_id, meta in iter_entries(
             dataset, category=config.category, limit=config.limit
         )
     ]
     runs = []
     if config.run_supported:
+        if config.benchmark != "nyu-ctf-bench":
+            raise ValueError("--run-supported is currently implemented for NYU CTF Bench only")
         for row in rows:
             if not row["supported_smoke"]:
                 continue
@@ -138,7 +159,7 @@ def run_matrix(config: MatrixConfig) -> Dict[str, Any]:
             ))
             runs.append(run_result)
     payload = {
-        "benchmark": "nyu-ctf-bench",
+        "benchmark": config.benchmark,
         "split": config.split,
         "summary": summarize(rows),
         "inventory": rows,
@@ -151,11 +172,14 @@ def run_matrix(config: MatrixConfig) -> Dict[str, Any]:
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="lotus-benchmark-matrix",
-        description="Inventory and optionally run supported NYU CTF Bench cases.",
+        description="Inventory and optionally run supported benchmark cases.",
     )
     p.add_argument("--bench-dir", required=True,
-                   help="NYU_CTF_Bench checkout root")
-    p.add_argument("--split", choices=["development", "test"], default="test")
+                   help="benchmark checkout root")
+    p.add_argument("--benchmark", choices=["nyu-ctf-bench", "ctf-dojo"],
+                   default="nyu-ctf-bench")
+    p.add_argument("--split", choices=["development", "test", "archive"],
+                   default="test")
     p.add_argument("--cases-dir", default="/tmp/lotus_bench_cases")
     p.add_argument("--results", default="/tmp/lotus_bench_results.jsonl")
     p.add_argument("--case-id-prefix", default="nyu-matrix")
@@ -174,6 +198,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     args = build_parser().parse_args(argv)
     payload = run_matrix(MatrixConfig(
         bench_dir=Path(args.bench_dir),
+        benchmark=args.benchmark,
         split=args.split,
         cases_dir=Path(args.cases_dir),
         results=Path(args.results),

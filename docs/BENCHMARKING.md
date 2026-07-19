@@ -88,9 +88,23 @@ targets from real benchmark failures:
 ```bash
 PYTHONPATH=. python -m lotusmcp.ops.benchmark_matrix \
   --bench-dir "$PWD/benchmarks/NYU_CTF_Bench_sparse" \
+  --benchmark nyu-ctf-bench \
   --split test \
   --limit 200 \
   --results /tmp/lotus_bench_results.jsonl
+```
+
+CTF-Dojo can also be inventoried after cloning its repository. Its public
+manifest contains 658 entries; execution requires generating or checking out the
+challenge runtime archive described by CTF-Dojo.
+
+```bash
+PYTHONPATH=. python -m lotusmcp.ops.benchmark_matrix \
+  --bench-dir "$PWD/benchmarks/CTF-Dojo" \
+  --benchmark ctf-dojo \
+  --split archive \
+  --limit 200 \
+  --results /tmp/lotus_dojo_results.jsonl
 ```
 
 Execute any matrix entries that already have verified built-in smoke specs:
@@ -98,6 +112,7 @@ Execute any matrix entries that already have verified built-in smoke specs:
 ```bash
 PYTHONPATH=. python -m lotusmcp.ops.benchmark_matrix \
   --bench-dir "$PWD/benchmarks/NYU_CTF_Bench_sparse" \
+  --benchmark nyu-ctf-bench \
   --split development \
   --run-supported \
   --manage-target

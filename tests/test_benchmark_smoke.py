@@ -8,7 +8,12 @@ from lotusmcp.control_plane.keyring import SigningKey
 from lotusmcp.control_plane.anchor import create_anchor
 from lotusmcp.engine.budget import BudgetLedger
 from lotusmcp.kernel.case import Case
-from lotusmcp.ops.benchmark_matrix import classify_case, iter_entries, summarize
+from lotusmcp.ops.benchmark_matrix import (
+    classify_case,
+    dataset_path,
+    iter_entries,
+    summarize,
+)
 from lotusmcp.ops.benchmark_smoke import SPECS, build_result
 
 
@@ -89,6 +94,33 @@ def test_matrix_iter_entries_filters_before_limit():
         "c": {"category": "web"},
     }
     assert [cid for cid, _ in iter_entries(dataset, category="web", limit=1)] == ["a"]
+
+
+def test_matrix_supports_nyu_and_ctf_dojo_dataset_paths():
+    root = Path("/bench")
+    assert dataset_path(root, "nyu-ctf-bench", "test") == root / "test_dataset.json"
+    assert dataset_path(root, "ctf-dojo", "archive") == root / "ctf_archive.json"
+    try:
+        dataset_path(root, "ctf-dojo", "test")
+    except ValueError as e:
+        assert "CTF-Dojo" in str(e)
+    else:
+        raise AssertionError("expected invalid CTF-Dojo split to fail")
+
+
+def test_ctf_dojo_inventory_is_not_marked_supported_without_runtime():
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        row = classify_case(root, "archive", "ca-demo-pwn-task", {
+            "benchmark": "ctf-archive",
+            "event": "demo",
+            "category": "pwn",
+            "challenge": "task",
+            "path": "ctf-archive/demo/task",
+        }, benchmark="ctf-dojo")
+    assert row["benchmark"] == "ctf-dojo"
+    assert row["status"] == "missing_checkout"
+    assert row["supported_smoke"] is False
 
 
 if __name__ == "__main__":
