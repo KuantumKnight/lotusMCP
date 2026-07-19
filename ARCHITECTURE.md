@@ -592,10 +592,12 @@ cases/<case_id>/
   hash chain, ONE ontology + id function, synchronous SQLite projector, bounded
   `STATE.md`, stdio MCP facade (`create_case`/`get_state`/`kb_query`/`kb_get`),
   replay-equivalence + tamper CI tests. No Kali — synthetic events.
-- **Phase 1 — Safe Executor MVP (recon only).** Rootless Podman + gVisor sandbox;
-  dual-stack default-DROP nftables netns (booted-netns egress test); audited forward
-  proxy; adapters `port_scan`/`http_probe`/`dir_bruteforce` with typed argv + hostile-argv
-  golden tests; redact-before-hash tee; async jobs.
+- **Phase 1 — Safe Executor MVP (recon only).** Host-native Kali backend now
+  executes validated `port_scan`/`http_probe`/`dir_bruteforce` argv directly on
+  the operator's Kali machine with `shell=False`, strict typed argv, host
+  wordlist allowlists, parser folds, and a second scope check before spawn.
+  The original rootless-Podman/gVisor/netns/proxy hardening remains a deployer
+  option, not used by the current host-only setup.
 - **Phase 2 — Control plane + scope authorization.** Operator CLI + HSM signing;
   verify-only Scope/Grant Verifier; agent-can-only-narrow; serializer-wide redaction;
   flag subsystem (4-tier registry, decode ladder, decoy filter, submit policy); signed
@@ -604,10 +606,12 @@ cases/<case_id>/
   step() for TRIAGE/RECON/ENUMERATE; playbook engine as sole candidate generator;
   EV+UCB selection; triage ensemble; single metered gateway + cache; CTF-aware stopping;
   seed web/crypto playbooks. *Target: solves easy web/crypto end-to-end.*
-- **Phase 4 — Interactive code-synthesis (Regime B).** Session workspace + persistent
-  tube; `session_edit_run`; write-ins bound to in-scope entities; pwn/rev/hard-crypto
-  primitives (checksec/r2/Ghidra-headless/angr/z3/Sage/pwntools). *Target: ret2libc pwn +
-  an RSA/lattice challenge via iterated scripting.*
+- **Phase 4 — Interactive code-synthesis (Regime B).** Host-native live sessions
+  now provide a stdlib TCP tube plus host `python3` script runner behind
+  `session_edit_run`, with write-ins bound to signed scope and existing budget,
+  redaction, and flag folds. Optional pwn/rev/hard-crypto libraries
+  (pwntools/angr/z3/Sage/Ghidra-headless) can be installed on the host and used
+  by operator scripts, but LotusMCP does not require a venv.
 - **Phase 5 — Context discipline at scale + ChatGPT LITE parity.** Decomposable
   salience + claim compaction; bounded resume packet; envelope-size integration test;
   LITE `search`/`fetch` bridge (~13-tool surface). *Load test: 5000-endpoint case renders

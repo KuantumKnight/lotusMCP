@@ -42,8 +42,9 @@ CTF playbooks, and the server-side safety model, is in
 
 ## Status
 
-This repo is the **Phase-0 walking skeleton** — the Case Kernel is real and runs on
-the **standard library alone** (no Kali, no LLM, no external deps):
+This repo now contains the deterministic LotusMCP core plus host-native Kali
+execution glue. The pure core still runs on the standard library alone; FULL
+execution mode uses the tools installed on this Kali machine directly.
 
 | Component | State |
 |---|---|
@@ -58,9 +59,12 @@ the **standard library alone** (no Kali, no LLM, no external deps):
 | Triage ensemble — category classifier feeding `category_conf` (`triage/`) | ✅ working |
 | EV+UCB selector, budget ledger, phase machine (`engine/`) | ✅ working |
 | OODA `step()` loop — observe/orient/decide/act, Regime A (`engine/loop.py`) | ✅ working (executor/LLM injected) |
-| MCP facade: `create_case` / `get_state` / `kb_query` / `kb_get` / `flag_scan` (`server.py`) | ✅ working (needs `mcp` SDK) |
+| MCP facade: LITE/FULL tool surface (`server.py`) | ✅ working (needs `mcp` SDK) |
 | Replay-equivalence + tamper-detection tests | ✅ passing |
-| Kali Executor (rootless-Podman sandbox), LLM gateway, Regime B | ⏳ Phases 1/4–8 (see roadmap) |
+| Host Kali executor — `nmap` / `curl` / `ffuf` through typed argv + `shell=False` | ✅ working |
+| Regime-B live sessions — TCP tube + host `python3` script runner | ✅ working |
+| LLM gateway, replay/writeup, library, community playbooks | ✅ working in deterministic/testable form |
+| Remaining external-bound work | SSE dashboard, real solved-case calibration, signed adapter-review workflow |
 
 ---
 
@@ -81,20 +85,38 @@ python -m lotusmcp.demo.decide_loop
 #     POST_EXPLOIT -> SOLVED_PENDING_SUBMIT -> FLAG_FOUND, flag captured.
 python -m lotusmcp.demo.autonomous_solve
 
-# 3. Run the determinism + tamper-evidence tests.
-python -m pytest tests/ -q          # or: PYTHONPATH=. python tests/test_replay_equivalence.py
+# 3. Run tests. pytest is not required; every test file has a __main__ runner.
+PYTHONPATH=. PYTHONIOENCODING=utf-8 python tests/test_replay_equivalence.py
 
-# 4. Run the MCP server (needs the SDK).
+# Full suite:
+for t in tests/test_*.py; do PYTHONPATH=. PYTHONIOENCODING=utf-8 python "$t" || exit 1; done
+
+# 4. Run the read-only/default MCP server (needs the SDK).
 pip install "mcp[cli]"
 python -m lotusmcp.server           # stdio transport
 ```
+
+For FULL host execution mode, launch through `lotusmcp.launcher` instead of
+`lotusmcp.server`. This wires `propose_and_run` to this machine's Kali tools and
+`session_edit_run` to the host TCP/Python session backend:
+
+```bash
+export LOTUS_PROFILE=FULL
+export LOTUS_CASES_DIR="$PWD/cases"
+export LOTUS_TRUSTED_OP_KEYS="<operator-public-key-hex>"
+python -m lotusmcp.launcher
+```
+
+FULL execution still requires a per-case signed `scope.json`; without one,
+interactive sessions fail closed and scoped actions are refused by the verified
+scope choke.
 
 Register the stdio server with an MCP client (Claude Desktop / Claude Code):
 
 ```jsonc
 {
   "mcpServers": {
-    "lotusmcp": { "command": "python", "args": ["-m", "lotusmcp.server"] }
+    "lotusmcp": { "command": "python", "args": ["-m", "lotusmcp.launcher"] }
   }
 }
 ```
@@ -111,8 +133,8 @@ lotusmcp/
   ontology/    # kinds.yaml (the entity ontology) + identity.py (the one entity-id function)
   kb.py        # read-only knowledge-graph queries (progressive disclosure)
   server.py    # small stable MCP facade (tools/resources)
-  demo/        # seed_recon.py — Phase-0 proof, no Kali needed
-tests/         # replay-equivalence + tamper detection
+  demo/        # deterministic demos; no live target required
+tests/         # stdlib __main__ test runners
 scope.example.json   # operator-signed scope manifest (the safety anchor)
 ARCHITECTURE.md      # the full design
 ```
