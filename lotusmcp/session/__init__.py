@@ -16,11 +16,12 @@ from lotusmcp.session.authoring import (
 from lotusmcp.session.manager import SessionError, SessionManager
 from lotusmcp.session.session import InteractiveSession, IterateResult
 from lotusmcp.session.tube import ScriptedTube, Tube
+from lotusmcp.session.live import HostPythonScriptRunner, TCPTube, host_session_factory
 
 __all__ = [
-    "Tube", "ScriptedTube",
+    "Tube", "ScriptedTube", "TCPTube",
     "Script", "RunOutput", "ScriptAuthor", "ScriptRunner",
-    "DeterministicScriptAuthor", "DeterministicScriptRunner",
+    "DeterministicScriptAuthor", "DeterministicScriptRunner", "HostPythonScriptRunner",
     "InteractiveSession", "IterateResult",
-    "SessionManager", "SessionError",
+    "SessionManager", "SessionError", "host_session_factory",
 ]

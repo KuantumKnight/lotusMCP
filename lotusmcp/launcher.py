@@ -13,6 +13,7 @@ from lotusmcp.engine.scope import ScopeError, ScopeVerifier
 from lotusmcp.executor.replay import ReplayExecutor
 from lotusmcp.executor.sandbox import backend_from_env
 from lotusmcp.kernel.case import Case
+from lotusmcp.session.live import host_session_factory
 
 
 def scope_for_case(case: Case, trusted_keys) -> Optional[object]:
@@ -45,6 +46,7 @@ def configure_server(server_module) -> None:
         executor_factory=executor_factory,
         scope_factory=scope_factory,
     )
+    server_module.SESSIONS.configure(host_session_factory)
 
 
 def main() -> None:
