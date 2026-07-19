@@ -625,4 +625,6 @@ cases/<case_id>/
   constants against SOLVED medium/hard corpora.
 - **Phase 8 — Community extensibility + supply-chain safety.** Playbook JSON-Schema +
   `lotus playbook lint/test`; community playbooks (reorder in-scope capabilities only)
-  low-friction; new adapters (define argv/egress) require signed review.
+  stay low-friction; new adapters (define argv/egress) require a signed
+  `adapter_review` manifest and still land through normal code review, never as
+  dynamically loaded MCP behavior.

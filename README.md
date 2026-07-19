@@ -64,7 +64,7 @@ execution mode uses the tools installed on this Kali machine directly.
 | Host Kali executor — `nmap` / `curl` / `ffuf` through typed argv + `shell=False` | ✅ working |
 | Regime-B live sessions — TCP tube + host `python3` script runner | ✅ working |
 | LLM gateway, replay/writeup, library, community playbooks | ✅ working in deterministic/testable form |
-| Remaining external-bound work | SSE dashboard, real solved-case calibration, signed adapter-review workflow |
+| Remaining external-bound work | Real solved-case calibration |
 
 ---
 
@@ -125,6 +125,18 @@ Useful endpoints:
 - `/case/<case_id>/metrics` — OpenMetrics text
 - `/case/<case_id>/events?after=<seq>` — recent JSON events
 - `/case/<case_id>/stream?after=<seq>` — server-sent event tail
+
+Signed adapter-review artifact for brand-new capabilities:
+
+```bash
+python -m lotusmcp.control_plane.cli sign-adapter \
+  --key operator.pem --case <case_id> \
+  --payload adapter-review-payload.json \
+  --out adapter-review.json
+```
+
+This records operator approval for a new adapter’s capability/category/tool,
+argv schema summary, and egress envelope. It does not dynamically load code.
 
 Register the stdio server with an MCP client (Claude Desktop / Claude Code):
 

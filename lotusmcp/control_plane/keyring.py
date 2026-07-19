@@ -6,7 +6,7 @@ it to sign the control-plane manifests. The server never runs this code and
 never holds this key; it only verifies the resulting `signer`/`sig` fields.
 
 Manifest types the operator signs (§1, §Safety.2):
-  scope · egress_grant · submit_allowlist · tier3
+  scope · egress_grant · submit_allowlist · tier3 · adapter_review
 """
 from __future__ import annotations
 
@@ -17,7 +17,8 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from lotusmcp.kernel.signing import ALG, SIG_FIELD, manifest_signing_bytes
 
-MANIFEST_TYPES = ("scope", "egress_grant", "submit_allowlist", "tier3")
+MANIFEST_TYPES = ("scope", "egress_grant", "submit_allowlist", "tier3",
+                  "adapter_review")
 MANIFEST_V = 1
 
 

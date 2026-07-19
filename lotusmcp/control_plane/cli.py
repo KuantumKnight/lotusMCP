@@ -14,6 +14,7 @@ cleanly, and it is NOT importable by the server path.
     python -m lotusmcp.control_plane.cli sign-grant  --key k.pem --case c1 --host cdn.x --port 443 --out g.json
     python -m lotusmcp.control_plane.cli sign-submit --key k.pem --case c1 --endpoint https://ctf/submit --out s.json
     python -m lotusmcp.control_plane.cli sign-tier3  --key k.pem --case c1 --enabled --out t3.json
+    python -m lotusmcp.control_plane.cli sign-adapter --key k.pem --case c1 --payload review.json --out adapter.json
     python -m lotusmcp.control_plane.cli anchor      --key k.pem --case-dir ./cases/c1 --out anchor.json
     python -m lotusmcp.control_plane.cli verify --manifest scope.json --trusted <hex> [--case-dir ./cases/c1]
 """
@@ -89,6 +90,18 @@ def _cmd_sign_tier3(args) -> int:
     return 0
 
 
+def _cmd_sign_adapter(args) -> int:
+    from lotusmcp.playbooks.adapter_review import lint_adapter_review_payload
+    payload = json.loads(Path(args.payload).read_text(encoding="utf-8"))
+    findings = lint_adapter_review_payload(payload)
+    if findings:
+        for f in findings:
+            print(f"adapter review payload invalid: {f}", file=sys.stderr)
+        return 1
+    _emit(sign_manifest(_load_key(args), "adapter_review", args.case, payload), args.out)
+    return 0
+
+
 def _cmd_anchor(args) -> int:
     store = EventStore(Path(args.case_dir))
     _emit(create_anchor(store, _load_key(args)), args.out)
@@ -159,6 +172,14 @@ def build_parser() -> argparse.ArgumentParser:
     grp.add_argument("--disabled", dest="enabled", action="store_false")
     t3.add_argument("--out")
     t3.set_defaults(func=_cmd_sign_tier3)
+
+    sa = sub.add_parser("sign-adapter", help="sign a reviewed adapter manifest")
+    key_args(sa)
+    sa.add_argument("--case", required=True)
+    sa.add_argument("--payload", required=True,
+                    help="JSON payload with capability/category/tool/argv_schema/egress/reviewer")
+    sa.add_argument("--out")
+    sa.set_defaults(func=_cmd_sign_adapter)
 
     an = sub.add_parser("anchor", help="sign an audit anchor over a case log tip")
     key_args(an)
