@@ -77,8 +77,8 @@ def classify_case(bench_dir: Path, split: str, challenge_id: str,
     compose_present = (root / "docker-compose.yml").exists()
     supported_smoke = (
         benchmark == "nyu-ctf-bench"
-        and split == "development"
         and challenge_id in SPECS
+        and SPECS[challenge_id].split == split
     )
     if supported_smoke:
         status = "supported"

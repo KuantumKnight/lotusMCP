@@ -39,9 +39,16 @@ def test_aggregate_result_omits_raw_flag():
 
 
 def test_builtin_specs_have_unique_ports_or_run_sequentially():
-    assert {"2013q-web-guess_harder", "2016q-web-mfw", "2016q-web-i_got_id"} <= set(SPECS)
+    assert {
+        "2013q-web-guess_harder",
+        "2016q-web-mfw",
+        "2016q-web-i_got_id",
+        "2023f-web-shreeramquest",
+    } <= set(SPECS)
     for cid, spec in SPECS.items():
         assert spec.challenge_id == cid
+        assert spec.split in {"development", "test"}
+        assert spec.category
         assert spec.expected_flag
         assert spec.exploit_script.strip()
         assert spec.probe_path.startswith("/")
@@ -121,6 +128,24 @@ def test_ctf_dojo_inventory_is_not_marked_supported_without_runtime():
     assert row["benchmark"] == "ctf-dojo"
     assert row["status"] == "missing_checkout"
     assert row["supported_smoke"] is False
+
+
+def test_matrix_marks_test_split_specs_supported():
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        spec = SPECS["2023f-web-shreeramquest"]
+        target = root / spec.rel
+        target.mkdir(parents=True)
+        (target / "docker-compose.yml").write_text("services: {}\n", encoding="utf-8")
+        row = classify_case(root, "test", spec.challenge_id, {
+            "year": "2023",
+            "event": "CSAW-Finals",
+            "category": "web",
+            "challenge": "ShreeRamQuest",
+            "path": str(spec.rel),
+        })
+    assert row["status"] == "supported"
+    assert row["supported_smoke"] is True
 
 
 if __name__ == "__main__":

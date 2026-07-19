@@ -68,8 +68,8 @@ PYTHONPATH=. python -m lotusmcp.ops.benchmark_smoke \
   --manage-target
 ```
 
-Run the current built-in batch (`2013q-web-guess_harder`, `2016q-web-mfw`,
-`2016q-web-i_got_id`) sequentially:
+Run the current built-in development batch (`2013q-web-guess_harder`,
+`2016q-web-mfw`, `2016q-web-i_got_id`) sequentially:
 
 ```bash
 PYTHONPATH=. python -m lotusmcp.ops.benchmark_smoke \
@@ -78,6 +78,20 @@ PYTHONPATH=. python -m lotusmcp.ops.benchmark_smoke \
   --results /tmp/lotus_bench_results.jsonl \
   --case-id nyu-dev-web-batch \
   --batch \
+  --split development \
+  --manage-target
+```
+
+Run supported test-split specs as they are promoted:
+
+```bash
+PYTHONPATH=. python -m lotusmcp.ops.benchmark_smoke \
+  --bench-dir "$PWD/benchmarks/NYU_CTF_Bench_sparse" \
+  --cases-dir /tmp/lotus_bench_cases \
+  --results /tmp/lotus_bench_results.jsonl \
+  --case-id nyu-test-web-batch \
+  --batch \
+  --split test \
   --manage-target
 ```
 
