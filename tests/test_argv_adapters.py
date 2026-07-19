@@ -81,9 +81,9 @@ def test_dir_bruteforce_golden():
     plans = build_argv(a, {"host": "10.10.11.53", "port": 80})
     assert plans[0].tool == "ffuf"
     assert plans[0].argv == (
-        "ffuf", "-w", "/opt/wordlists/ctf-web.txt", "-u",
+        "ffuf", "-w", "/usr/share/seclists/Discovery/Web-Content/quickhits.txt", "-u",
         "http://10.10.11.53:80/FUZZ", "-t", "40", "-noninteractive",
-        "-fc", "404",
+        "-of", "json", "-o", "-", "-fc", "404",
     ), plans[0].argv
 
 

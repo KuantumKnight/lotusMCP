@@ -170,11 +170,11 @@ _SCAN_TECH: Dict[str, List[str]] = {
     "udp": ["-sU"],
 }
 
-# dir_bruteforce wordlist name -> absolute path inside the sandbox image.
+# dir_bruteforce wordlist name -> absolute path on the Kali host.
 _WORDLISTS: Dict[str, str] = {
-    "ctf-web": "/opt/wordlists/ctf-web.txt",
-    "common": "/opt/wordlists/common.txt",
-    "raft-medium": "/opt/wordlists/raft-medium-directories.txt",
+    "ctf-web": "/usr/share/seclists/Discovery/Web-Content/quickhits.txt",
+    "common": "/usr/share/seclists/Discovery/Web-Content/common.txt",
+    "raft-medium": "/usr/share/seclists/Discovery/Web-Content/raft-medium-directories.txt",
 }
 # response filters -> ffuf flags.
 _HTTP_FILTERS: Dict[str, List[str]] = {
@@ -233,7 +233,7 @@ def _dir_bruteforce(action, target: Mapping[str, Any]) -> List[ArgvPlan]:
     flt = _pick(action.params, "filter", _HTTP_FILTERS, "filter")
     url = f"{scheme}://{host}:{port}/FUZZ"
     argv = ["ffuf", "-w", wordlist, "-u", url, "-t", "40", "-noninteractive",
-            *flt]
+            "-of", "json", "-o", "-", *flt]
     return [ArgvPlan("ffuf", tuple(argv), action.capability, action.target_id,
                      note=f"fuzz {scheme}://{host}:{port}/")]
 
