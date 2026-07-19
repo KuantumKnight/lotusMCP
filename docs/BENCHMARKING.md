@@ -81,6 +81,28 @@ PYTHONPATH=. python -m lotusmcp.ops.benchmark_smoke \
   --manage-target
 ```
 
+Inventory a larger NYU split before execution. This is the safe path toward the
+full 200-case test split because it separates unsupported or missing local
+targets from real benchmark failures:
+
+```bash
+PYTHONPATH=. python -m lotusmcp.ops.benchmark_matrix \
+  --bench-dir "$PWD/benchmarks/NYU_CTF_Bench_sparse" \
+  --split test \
+  --limit 200 \
+  --results /tmp/lotus_bench_results.jsonl
+```
+
+Execute any matrix entries that already have verified built-in smoke specs:
+
+```bash
+PYTHONPATH=. python -m lotusmcp.ops.benchmark_matrix \
+  --bench-dir "$PWD/benchmarks/NYU_CTF_Bench_sparse" \
+  --split development \
+  --run-supported \
+  --manage-target
+```
+
 Run it as root or through `sudo env PYTHONPATH=...` if this host requires sudo
 for Docker and privileged localhost scans. The aggregate result omits the raw
 flag; the case log remains the authoritative audit record.

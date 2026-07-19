@@ -8,6 +8,7 @@ from lotusmcp.control_plane.keyring import SigningKey
 from lotusmcp.control_plane.anchor import create_anchor
 from lotusmcp.engine.budget import BudgetLedger
 from lotusmcp.kernel.case import Case
+from lotusmcp.ops.benchmark_matrix import classify_case, iter_entries, summarize
 from lotusmcp.ops.benchmark_smoke import SPECS, build_result
 
 
@@ -39,6 +40,55 @@ def test_builtin_specs_have_unique_ports_or_run_sequentially():
         assert spec.expected_flag
         assert spec.exploit_script.strip()
         assert spec.probe_path.startswith("/")
+
+
+def test_matrix_classifies_supported_missing_and_needs_spec():
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        supported = root / SPECS["2013q-web-guess_harder"].rel
+        supported.mkdir(parents=True)
+        (supported / "docker-compose.yml").write_text("services: {}\n", encoding="utf-8")
+        local = root / "development/2099/CSAW-Quals/web/localonly"
+        local.mkdir(parents=True)
+        rows = [
+            classify_case(root, "development", "2013q-web-guess_harder", {
+                "year": "2013",
+                "event": "CSAW-Quals",
+                "category": "web",
+                "challenge": "Guess Harder",
+                "path": str(SPECS["2013q-web-guess_harder"].rel),
+            }),
+            classify_case(root, "development", "2099q-web-localonly", {
+                "year": "2099",
+                "event": "CSAW-Quals",
+                "category": "web",
+                "challenge": "localonly",
+                "path": "development/2099/CSAW-Quals/web/localonly",
+            }),
+            classify_case(root, "test", "2099q-web-missing", {
+                "year": "2099",
+                "event": "CSAW-Quals",
+                "category": "web",
+                "challenge": "missing",
+                "path": "test/2099/CSAW-Quals/web/missing",
+            }),
+        ]
+    assert [r["status"] for r in rows] == [
+        "supported", "missing_compose", "missing_checkout",
+    ]
+    summary = summarize(rows)
+    assert summary["total"] == 3
+    assert summary["supported"] == 1
+    assert summary["checked_out"] == 2
+
+
+def test_matrix_iter_entries_filters_before_limit():
+    dataset = {
+        "a": {"category": "web"},
+        "b": {"category": "crypto"},
+        "c": {"category": "web"},
+    }
+    assert [cid for cid, _ in iter_entries(dataset, category="web", limit=1)] == ["a"]
 
 
 if __name__ == "__main__":

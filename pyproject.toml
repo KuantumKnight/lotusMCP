@@ -27,6 +27,7 @@ dev = ["pytest>=8.0"]
 lotusmcp = "lotusmcp.server:mcp.run"
 lotus-doctor = "lotusmcp.ops.doctor:main"
 lotus-benchmark-smoke = "lotusmcp.ops.benchmark_smoke:main"
+lotus-benchmark-matrix = "lotusmcp.ops.benchmark_matrix:main"
 
 [build-system]
 requires = ["hatchling"]
