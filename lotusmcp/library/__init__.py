@@ -9,5 +9,13 @@ from lotusmcp.library.technique import (
     TechniqueLibrary,
     technique_id,
 )
+from lotusmcp.library.calibrate import (
+    CalibrationObservation,
+    calibrate_cases,
+    extract_observations,
+)
 
-__all__ = ["TechniqueLibrary", "TechniqueCard", "technique_id"]
+__all__ = [
+    "TechniqueLibrary", "TechniqueCard", "technique_id",
+    "CalibrationObservation", "calibrate_cases", "extract_observations",
+]

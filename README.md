@@ -64,7 +64,7 @@ execution mode uses the tools installed on this Kali machine directly.
 | Host Kali executor — `nmap` / `curl` / `ffuf` through typed argv + `shell=False` | ✅ working |
 | Regime-B live sessions — TCP tube + host `python3` script runner | ✅ working |
 | LLM gateway, replay/writeup, library, community playbooks | ✅ working in deterministic/testable form |
-| Remaining external-bound work | Real solved-case calibration |
+| Remaining external-bound work | Real solved-case collection / live validation |
 
 ---
 
@@ -137,6 +137,18 @@ python -m lotusmcp.control_plane.cli sign-adapter \
 
 This records operator approval for a new adapter’s capability/category/tool,
 argv schema summary, and egress envelope. It does not dynamically load code.
+
+Calibrate the cross-case Technique Library from solved case logs:
+
+```bash
+PYTHONPATH=. python -m lotusmcp.library.calibrate \
+  --cases-dir "$PWD/cases" \
+  --library-dir "$PWD/library"
+```
+
+The importer writes only generalized observations
+`(capability, category, param_class, phase, success)` to the library; target
+hosts, ports, paths, payloads, and entity ids are not copied cross-case.
 
 Register the stdio server with an MCP client (Claude Desktop / Claude Code):
 

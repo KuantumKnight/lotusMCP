@@ -19,7 +19,7 @@ LotusMCP is an autonomous CTF case-management MCP server that bridges an LLM to 
 
 ## 2. Build state — what's done, phase by phase
 
-**Everything except real solved-case calibration is now built/tested in this Kali workspace.** FULL execution is host-only by user instruction: use this exact Kali machine; do not use Docker/Podman/venv execution paths. Full direct test suite green.
+**Everything except real solved-case collection/live validation is now built/tested in this Kali workspace.** FULL execution is host-only by user instruction: use this exact Kali machine; do not use Docker/Podman/venv execution paths. Full direct test suite green.
 
 ### Phase 0 — Case Kernel (DONE)
 `kernel/` — append-only hash-chained event log (`log.py`, `canonical.py`, `events.py`), deterministic projector → SQLite (`projector`/graph), `state.py`, `case.py`. `ontology/identity.py` (natural-key identity), `kb.py`. Stdio MCP `server.py`. Replay-equivalence + tamper-detection tests pass.
@@ -74,7 +74,7 @@ LotusMCP is an autonomous CTF case-management MCP server that bridges an LLM to 
 
 ### Phase 7 — Cross-case Technique Library + calibration (DONE, commit `bc71887`)
 `lotusmcp/library/`: `TechniqueLibrary` lives OUTSIDE any case dir, cards keyed only by `(capability, category, param_class)` via `technique_id()` — no target/host/path/payload, so nothing leaks cross-case. Beta-posterior calibration per card (`alpha=wins+1`, `beta=losses+1`; `observe`/`observe_action` bump it), Thompson-sampling `suggest(phase?,category?,k=5,rng?)` (deterministic under seeded `random.Random`, mean-mode if `rng=None`), human-gated `promote(tid,reviewer)` (raises `KeyError` if never observed). Pure rebuildable fold of its own `library.jsonl`. `Loop(library=None)` optional hook: after ACT, `library.observe_action(action, phase, progressed)`. MCP: `technique_suggest`(LITE, unseeded), `technique_promote`(FULL). Test suite: `test_technique_library`(8).
-**Remaining:** constant calibration against a real SOLVED corpus (needs real case data).
+`library/calibrate.py` (post-`67f8cfd`): offline importer folds solved case logs into target-free technique observations and updates `TechniqueLibrary`. Still needs real solved case data for meaningful constants.
 
 ### Phase 8 — Community playbook lint + safe apply + signed adapter review (DONE)
 `playbooks/community.py`: community playbooks are treated as DATA, not code. `lint_playbook(doc, known_rule_ids, known_caps)` never raises, fails loud (returns findings) on: unknown rule id, forbidden keys (`capability`/`kind`/`category`/`when`/`params`/`phase_gate`/`rationale` — new capabilities need signed review), out-of-range knobs (priority/yield/risk∈[0,1], cost>0, bool≠number), structural errors (not-an-object/no-rules/missing-name/duplicate-id). Only tunable keys: `priority/yield/cost/risk`/`enabled`. `apply_playbook(base_rules, doc)` raises `CommunityPlaybookError` unless lint-clean, else returns tuned rules via `dataclasses.replace` (vetted `capability`/`when` objects preserved identity). `playbooks/cli.py` `main(argv)`: operator-gated `lotus playbook lint|test` CLI. Untrusted playbook loading is deliberately NOT exposed on the MCP surface. Test suite: `test_community_playbook`(10).
@@ -84,7 +84,7 @@ LotusMCP is an autonomous CTF case-management MCP server that bridges an LLM to 
 
 ## 3. What's left
 
-1. **Phase 7 real calibration** — needs a real corpus of SOLVED cases to tune constants meaningfully.
+1. **Collect real solved cases / authorized live validation** — calibration tooling exists, but meaningful tuning needs actual solved case logs.
 2. Optional hardening/deployment work if the user changes the host-only constraint: rootless Podman/gVisor/netns/proxy. Current instruction is not to use these.
 
 Recommended next step if continuing this work: run against authorized lab targets with signed `scope.json` and collect SOLVED case logs for calibration.
