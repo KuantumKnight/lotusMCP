@@ -17,10 +17,9 @@ Two properties make this safe *and* replay-equivalent:
   may pass the case `flag_format`; any candidate span that fully matches it is
   never tokenized.
 
-Skeleton note: the vault here obfuscates at rest with a keyed XOR + blake2b MAC,
-not AES-GCM (stdlib-only, mirroring `canonical.py`'s pragmatic-skeleton stance).
-Production swaps `SecretVault` for the AES-GCM `redaction/secrets.enc` store; the
-handle format and the `Redactor` interface do not change.
+`SecretVault` remains as a stdlib fallback for isolated unit tests. `Case` uses
+the AES-GCM vault from `kernel.vault` by default; the handle format and the
+`Redactor` interface do not change.
 """
 from __future__ import annotations
 

@@ -30,13 +30,16 @@ class Case:
         self.scope_path = self.dir / "scope.json"
         # One redactor per case so the flag (never redacted) and the reveal
         # vault are case-scoped. flag_format may not exist yet on first create.
-        # `vault` lets a caller supply the production AES-GCM vault; None keeps
-        # the stdlib keyed-XOR skeleton so the kernel has no hard crypto dep.
+        # `vault` lets a caller supply a custom reveal vault. None uses the
+        # production AES-GCM per-case vault, persisted under case_dir/vault/.
         flag_format = None
         if self.meta_path.exists():
             flag_format = json.loads(
                 self.meta_path.read_text(encoding="utf-8")
             ).get("flag_format")
+        if vault is None:
+            from lotusmcp.kernel.vault import AESGCMVault
+            vault = AESGCMVault.for_case_dir(self.dir)
         self.redactor = Redactor(flag_format=flag_format, vault=vault)
         self.store = EventStore(self.dir, redactor=self.redactor)
 

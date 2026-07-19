@@ -97,6 +97,23 @@ def test_case_uses_aesgcm_vault():
     assert case.redactor.vault.reveal(handle) == "Adm1nP@ss"
 
 
+def test_default_case_vault_persists_reveal_without_plaintext():
+    base = Path(tempfile.mkdtemp(prefix="lotus_vault_default_"))
+    case = Case.create(base, "default-vault", title="t", category="web",
+                       flag_format=r"flag\{[^}]+\}")
+    case.append(EventDraft("note.added", {"kind": "llm", "name": "oracle"},
+                           {"text": "db password=PersistMe123"}))
+    handle = handle_for("secret_kv", "PersistMe123")
+    assert case.redactor.vault.reveal(handle) == "PersistMe123"
+    vault_dir = case.dir / "vault"
+    assert (vault_dir / "secrets.json").exists()
+    assert (vault_dir / "key.bin").exists()
+    assert "PersistMe123" not in (vault_dir / "secrets.json").read_text(encoding="utf-8")
+
+    reopened = Case(base, "default-vault")
+    assert reopened.redactor.vault.reveal(handle) == "PersistMe123"
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items())
            if k.startswith("test_") and callable(v)]

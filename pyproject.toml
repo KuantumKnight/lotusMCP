@@ -6,9 +6,10 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 dependencies = [
-    # Phase-0 kernel/projector/demo run on the stdlib alone.
     # The MCP server facade needs the official SDK:
     "mcp[cli]>=1.2.0",
+    # Default case vault + control-plane verification use real crypto.
+    "cryptography>=42.0",
 ]
 
 [project.optional-dependencies]
@@ -17,7 +18,6 @@ full = [
     "pydantic>=2.6",
     "aiosqlite>=0.19",
     "portalocker>=2.8",
-    "cryptography>=42.0",
     "pyyaml>=6.0",
     "jinja2>=3.1",
 ]

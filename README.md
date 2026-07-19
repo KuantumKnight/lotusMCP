@@ -52,7 +52,7 @@ execution mode uses the tools installed on this Kali machine directly.
 | Single entity-id function + ontology (`ontology/`) | ✅ working |
 | Deterministic SQLite graph projector (`kernel/projector.py`) | ✅ working |
 | Bounded `STATE.md` working-set renderer (`kernel/state.py`) | ✅ working |
-| Redaction choke — deterministic secret tokenizer + reveal vault (`kernel/redaction.py`) | ✅ working (mandatory on the serializer) |
+| Redaction choke — deterministic secret tokenizer + persistent AES-GCM reveal vault (`kernel/redaction.py`, `kernel/vault.py`) | ✅ working (mandatory on the serializer) |
 | Read-only graph queries (`kb.py`) | ✅ working |
 | Flag subsystem — decode ladder, scanner, ranker + decoy filter, 4-tier registry, submit policy (`flag/`) | ✅ working |
 | Playbook engine — forward-chaining rules, `U(A)` scoring, dead-end/novelty/quota (`playbooks/`, `engine/`) | ✅ working (sole candidate generator) |

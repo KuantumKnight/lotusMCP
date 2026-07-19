@@ -503,7 +503,8 @@ No LLM output — and no prompt-injection payload in target output — can widen
    Ship hostile-input golden tests.
 4. **Redact-before-hash + serializer-wide redaction.** The tee redacts *before* hashing
    and *before* any disk write, so `sha256(stored) == artifact_id` holds and audit proofs
-   stay valid; plaintext secrets never touch disk (AES-GCM vault for privileged reveal).
+   stay valid; plaintext secrets never touch the log. Privileged reveal uses the
+   per-case persistent AES-GCM vault.
    Redaction is also a mandatory choke on the serializer for all LLM-authored text —
    closing the non-Executor leak path into `events.jsonl → STATE.md → resume → writeup →
    Technique Library`. **Flags** (the objective) are captured verbatim; incidental
