@@ -45,6 +45,7 @@ def test_builtin_specs_have_unique_ports_or_run_sequentially():
         "2016q-web-i_got_id",
         "2017q-web-orange",
         "2017q-web-orangev2",
+        "2019f-web-biometric",
         "2020f-web-picgram",
         "2021q-web-gatekeeping",
         "2021q-web-no_pass_needed",
