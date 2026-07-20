@@ -41,6 +41,7 @@ def test_aggregate_result_omits_raw_flag():
 def test_builtin_specs_have_unique_ports_or_run_sequentially():
     assert {
         "2013q-web-guess_harder",
+        "2015q-web-k_stairs",
         "2016q-web-mfw",
         "2016q-web-i_got_id",
         "2017q-web-orange",

