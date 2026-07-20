@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
+import subprocess
 
 from lotusmcp.control_plane.keyring import SigningKey
 from lotusmcp.control_plane.anchor import create_anchor
@@ -14,7 +15,14 @@ from lotusmcp.ops.benchmark_matrix import (
     iter_entries,
     summarize,
 )
-from lotusmcp.ops.benchmark_smoke import ChallengeSpec, SPECS, _compose_env, build_result
+from lotusmcp.ops.benchmark_smoke import (
+    ChallengeSpec,
+    SPECS,
+    _compose_env,
+    _host_env,
+    stop_target,
+    build_result,
+)
 
 
 def test_aggregate_result_omits_raw_flag():
@@ -79,6 +87,47 @@ def test_compose_env_is_opt_in_and_materialized():
     )
     assert _compose_env(SPECS["2013q-web-guess_harder"]) == {}
     assert _compose_env(spec) == {"PUPPETEER_SKIP_DOWNLOAD": "true"}
+
+
+def test_host_env_includes_challenge_dir_and_overrides():
+    with tempfile.TemporaryDirectory() as d:
+        challenge_dir = Path(d)
+        spec = ChallengeSpec(
+            challenge_id="demo",
+            rel=Path("demo"),
+            port=80,
+            probe_path="/",
+            expected_flag="flag{demo}",
+            exploit_script="print('ok')",
+            note="demo",
+            host_start_env=(("PYTHONPATH", "/tmp/custom"),),
+        )
+        env = _host_env(spec, challenge_dir)
+    assert env["LOTUS_CHALLENGE_DIR"] == str(challenge_dir)
+    assert env["PYTHONPATH"] == "/tmp/custom"
+
+
+def test_stop_target_terminates_host_process_group():
+    with tempfile.TemporaryDirectory() as d:
+        spec = ChallengeSpec(
+            challenge_id="demo",
+            rel=Path("demo"),
+            port=80,
+            probe_path="/",
+            expected_flag="flag{demo}",
+            exploit_script="print('ok')",
+            note="demo",
+            host_start_cmd=("python", "-c", "import time; time.sleep(60)"),
+        )
+        proc = subprocess.Popen(
+            list(spec.host_start_cmd),
+            cwd=d,
+            start_new_session=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        stop_target(Path(d), spec, proc)
+    assert proc.poll() is not None
 
 
 def test_matrix_classifies_supported_missing_and_needs_spec():

@@ -16,6 +16,7 @@ import argparse
 import ipaddress
 import json
 import os
+import signal
 import shutil
 import subprocess
 import time
@@ -57,6 +58,9 @@ class ChallengeSpec:
     compose_service: str = ""
     manage_service: str = ""
     compose_env: tuple[tuple[str, str], ...] = ()
+    host_start_cmd: tuple[str, ...] = ()
+    host_start_cwd: str = "."
+    host_start_env: tuple[tuple[str, str], ...] = ()
 
 
 SPECS: Dict[str, ChallengeSpec] = {
@@ -1110,8 +1114,19 @@ def _compose_env(spec: ChallengeSpec) -> Dict[str, str]:
     return dict(spec.compose_env)
 
 
+def _host_env(spec: ChallengeSpec, challenge_dir: Path) -> Dict[str, str]:
+    env = dict(spec.host_start_env)
+    env.setdefault("LOTUS_CHALLENGE_DIR", str(challenge_dir))
+    env.setdefault("PYTHONPATH", str(challenge_dir))
+    return env
+
+
 def _target_dir(bench_dir: Path, spec: ChallengeSpec) -> Path:
-    path = bench_dir / spec.rel
+    return bench_dir / spec.rel
+
+
+def _compose_target_dir(bench_dir: Path, spec: ChallengeSpec) -> Path:
+    path = _target_dir(bench_dir, spec)
     if not (path / "docker-compose.yml").exists():
         raise FileNotFoundError(
             f"missing selected challenge checkout: {path / 'docker-compose.yml'}"
@@ -1119,9 +1134,31 @@ def _target_dir(bench_dir: Path, spec: ChallengeSpec) -> Path:
     return path
 
 
-def start_target(bench_dir: Path, spec: ChallengeSpec) -> None:
+def start_target(bench_dir: Path, spec: ChallengeSpec) -> Optional[subprocess.Popen]:
+    if spec.host_start_cmd:
+        target = _target_dir(bench_dir, spec)
+        cwd = target / spec.host_start_cwd
+        if not cwd.exists():
+            raise FileNotFoundError(f"missing selected challenge checkout: {cwd}")
+        env = os.environ.copy()
+        env.update(_host_env(spec, target))
+        process = subprocess.Popen(
+            list(spec.host_start_cmd),
+            cwd=str(cwd),
+            env=env,
+            start_new_session=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        time.sleep(0.5)
+        if process.poll() is not None:
+            raise RuntimeError(
+                f"host target {spec.challenge_id} exited early with {process.returncode}"
+            )
+        return process
+
     _ensure_network()
-    target = _target_dir(bench_dir, spec)
+    target = _compose_target_dir(bench_dir, spec)
     last: Optional[BaseException] = None
     for attempt in range(1, 4):
         try:
@@ -1138,10 +1175,23 @@ def start_target(bench_dir: Path, spec: ChallengeSpec) -> None:
     raise RuntimeError(f"failed to start {spec.challenge_id} after 3 attempts") from last
 
 
-def stop_target(bench_dir: Path, spec: ChallengeSpec) -> None:
+def stop_target(
+    bench_dir: Path,
+    spec: ChallengeSpec,
+    process: Optional[subprocess.Popen] = None,
+) -> None:
+    if process is not None:
+        if process.poll() is None:
+            os.killpg(process.pid, signal.SIGTERM)
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.wait(timeout=10)
+        return
     _run(
         [*_compose_cmd(), "down", "-v"],
-        cwd=_target_dir(bench_dir, spec),
+        cwd=_compose_target_dir(bench_dir, spec),
         timeout=120,
         env=_compose_env(spec),
     )
@@ -1307,8 +1357,9 @@ def build_result(
 def run_smoke(config: SmokeConfig) -> Dict[str, Any]:
     spec = _spec(config.challenge_id)
     started = time.time()
+    target_process: Optional[subprocess.Popen] = None
     if config.manage_target:
-        start_target(config.bench_dir, spec)
+        target_process = start_target(config.bench_dir, spec)
     try:
         case, signer, scope = _seed_case(config, spec)
         svc = _recon(case, scope, spec)
@@ -1337,7 +1388,7 @@ def run_smoke(config: SmokeConfig) -> Dict[str, Any]:
         return result
     finally:
         if config.manage_target and not config.keep_target:
-            stop_target(config.bench_dir, spec)
+            stop_target(config.bench_dir, spec, target_process)
 
 
 def build_parser() -> argparse.ArgumentParser:
