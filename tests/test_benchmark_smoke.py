@@ -22,6 +22,7 @@ from lotusmcp.ops.benchmark_smoke import (
     _host_env,
     _recon,
     _seed_case,
+    build_parser,
     stop_target,
     build_result,
     SmokeConfig,
@@ -94,6 +95,16 @@ def test_compose_env_is_opt_in_and_materialized():
     )
     assert _compose_env(SPECS["2013q-web-guess_harder"]) == {}
     assert _compose_env(spec) == {"PUPPETEER_SKIP_DOWNLOAD": "true"}
+
+
+def test_parser_accepts_multiple_explicit_challenges():
+    args = build_parser().parse_args([
+        "--bench-dir", "/bench",
+        "--case-id", "multi",
+        "--challenge", "2017q-cry-almost_xor",
+        "--challenge", "2017q-cry-another_xor",
+    ])
+    assert args.challenge == ["2017q-cry-almost_xor", "2017q-cry-another_xor"]
 
 
 def test_host_env_includes_challenge_dir_and_overrides():

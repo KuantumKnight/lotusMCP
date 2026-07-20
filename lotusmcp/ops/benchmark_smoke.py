@@ -1508,8 +1508,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--cases-dir", default="/tmp/lotus_bench_cases")
     p.add_argument("--results", default="/tmp/lotus_bench_results.jsonl")
     p.add_argument("--case-id", default="nyu-dev-smoke")
-    p.add_argument("--challenge", choices=sorted(SPECS),
-                   default="2013q-web-guess_harder")
+    p.add_argument("--challenge", choices=sorted(SPECS), action="append",
+                   help=("challenge to run; may be provided multiple times "
+                         "(default: 2013q-web-guess_harder)"))
     p.add_argument("--batch", action="store_true",
                    help="run all built-in smoke specs sequentially")
     p.add_argument("--split", choices=["development", "test", "all"],
@@ -1530,11 +1531,11 @@ def main(argv: Optional[List[str]] = None) -> int:
             if args.split == "all" or spec.split == args.split
         ]
     else:
-        challenges = [args.challenge]
+        challenges = args.challenge or ["2013q-web-guess_harder"]
     results = []
     for challenge_id in challenges:
         case_id = args.case_id
-        if args.batch:
+        if args.batch or len(challenges) > 1:
             case_id = f"{args.case_id}-{challenge_id}".replace("_", "-")
         results.append(run_smoke(SmokeConfig(
             bench_dir=Path(args.bench_dir),
