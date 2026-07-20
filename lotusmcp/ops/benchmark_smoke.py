@@ -74,6 +74,20 @@ class OfflineTube:
         return
 
 
+OFFLINE_README_FLAG_SCRIPT = r"""
+import os
+import re
+from pathlib import Path
+
+readme = Path(os.environ["LOTUS_CHALLENGE_DIR"]) / "README.md"
+text = readme.read_text(encoding="utf-8", errors="replace")
+match = re.search(r"flag\{[^}\r\n]+\}", text)
+if not match:
+    raise RuntimeError("README artifact did not contain a flag-shaped token")
+print(match.group(0))
+"""
+
+
 SPECS: Dict[str, ChallengeSpec] = {
     "2013q-web-guess_harder": ChallengeSpec(
         challenge_id="2013q-web-guess_harder",
@@ -1061,18 +1075,31 @@ with opener.open(f"{base}/home", timeout=5) as r:
         split="test",
         category="crypto",
         target_kind="offline",
-        exploit_script=r"""
-import os
-import re
-from pathlib import Path
-
-readme = Path(os.environ["LOTUS_CHALLENGE_DIR"]) / "README.md"
-text = readme.read_text(encoding="utf-8", errors="replace")
-match = re.search(r"flag\{[^}\r\n]+\}", text)
-if not match:
-    raise RuntimeError("README artifact did not contain a flag-shaped token")
-print(match.group(0))
-""",
+        exploit_script=OFFLINE_README_FLAG_SCRIPT,
+    ),
+    "2017q-cry-another_xor": ChallengeSpec(
+        challenge_id="2017q-cry-another_xor",
+        rel=Path("test/2017/CSAW-Quals/crypto/another_xor"),
+        port=1,
+        probe_path="artifact://README.md",
+        expected_flag="flag{sti11_us3_da_x0r_for_my_s3cratz}",
+        note="offline artifact-only README extraction smoke",
+        split="test",
+        category="crypto",
+        target_kind="offline",
+        exploit_script=OFFLINE_README_FLAG_SCRIPT,
+    ),
+    "2018q-cry-babycrypto": ChallengeSpec(
+        challenge_id="2018q-cry-babycrypto",
+        rel=Path("test/2018/CSAW-Quals/crypto/babycrypto"),
+        port=1,
+        probe_path="artifact://README.md",
+        expected_flag="flag{diffie-hellman-g0ph3rzraOY1Jal4cHaFY9SWRyAQ6aH}",
+        note="offline artifact-only README extraction smoke",
+        split="test",
+        category="crypto",
+        target_kind="offline",
+        exploit_script=OFFLINE_README_FLAG_SCRIPT,
     ),
 }
 
