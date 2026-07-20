@@ -14,7 +14,7 @@ from lotusmcp.ops.benchmark_matrix import (
     iter_entries,
     summarize,
 )
-from lotusmcp.ops.benchmark_smoke import SPECS, build_result
+from lotusmcp.ops.benchmark_smoke import ChallengeSpec, SPECS, _compose_env, build_result
 
 
 def test_aggregate_result_omits_raw_flag():
@@ -64,6 +64,21 @@ def test_builtin_specs_have_unique_ports_or_run_sequentially():
         assert spec.expected_flag
         assert spec.exploit_script.strip()
         assert spec.probe_path.startswith("/")
+
+
+def test_compose_env_is_opt_in_and_materialized():
+    spec = ChallengeSpec(
+        challenge_id="demo",
+        rel=Path("demo"),
+        port=80,
+        probe_path="/",
+        expected_flag="flag{demo}",
+        exploit_script="print('ok')",
+        note="demo",
+        compose_env=(("PUPPETEER_SKIP_DOWNLOAD", "true"),),
+    )
+    assert _compose_env(SPECS["2013q-web-guess_harder"]) == {}
+    assert _compose_env(spec) == {"PUPPETEER_SKIP_DOWNLOAD": "true"}
 
 
 def test_matrix_classifies_supported_missing_and_needs_spec():

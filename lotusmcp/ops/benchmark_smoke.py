@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import ipaddress
 import json
+import os
 import shutil
 import subprocess
 import time
@@ -55,6 +56,7 @@ class ChallengeSpec:
     target_host: str = TARGET_HOST
     compose_service: str = ""
     manage_service: str = ""
+    compose_env: tuple[tuple[str, str], ...] = ()
 
 
 SPECS: Dict[str, ChallengeSpec] = {
@@ -1063,8 +1065,23 @@ def _is_ip(host: str) -> bool:
     return True
 
 
-def _run(cmd: List[str], *, cwd: Optional[Path] = None, timeout: int = 120) -> None:
-    subprocess.run(cmd, cwd=str(cwd) if cwd else None, check=True, timeout=timeout)
+def _run(
+    cmd: List[str],
+    *,
+    cwd: Optional[Path] = None,
+    timeout: int = 120,
+    env: Optional[Dict[str, str]] = None,
+) -> None:
+    run_env = os.environ.copy()
+    if env:
+        run_env.update(env)
+    subprocess.run(
+        cmd,
+        cwd=str(cwd) if cwd else None,
+        env=run_env,
+        check=True,
+        timeout=timeout,
+    )
 
 
 def _compose_cmd() -> List[str]:
@@ -1089,6 +1106,10 @@ def _ensure_network() -> None:
         _run([docker, "network", "create", "ctfnet"], timeout=30)
 
 
+def _compose_env(spec: ChallengeSpec) -> Dict[str, str]:
+    return dict(spec.compose_env)
+
+
 def _target_dir(bench_dir: Path, spec: ChallengeSpec) -> Path:
     path = bench_dir / spec.rel
     if not (path / "docker-compose.yml").exists():
@@ -1107,7 +1128,7 @@ def start_target(bench_dir: Path, spec: ChallengeSpec) -> None:
             cmd = [*_compose_cmd(), "up", "-d"]
             if spec.manage_service:
                 cmd.append(spec.manage_service)
-            _run(cmd, cwd=target, timeout=900)
+            _run(cmd, cwd=target, timeout=900, env=_compose_env(spec))
             return
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
             last = e
@@ -1118,7 +1139,12 @@ def start_target(bench_dir: Path, spec: ChallengeSpec) -> None:
 
 
 def stop_target(bench_dir: Path, spec: ChallengeSpec) -> None:
-    _run([*_compose_cmd(), "down", "-v"], cwd=_target_dir(bench_dir, spec), timeout=120)
+    _run(
+        [*_compose_cmd(), "down", "-v"],
+        cwd=_target_dir(bench_dir, spec),
+        timeout=120,
+        env=_compose_env(spec),
+    )
 
 
 def _append_all(case: Case, drafts) -> None:
