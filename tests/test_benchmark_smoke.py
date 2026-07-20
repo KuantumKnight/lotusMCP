@@ -44,6 +44,7 @@ def test_builtin_specs_have_unique_ports_or_run_sequentially():
         "2015q-web-k_stairs",
         "2016q-web-mfw",
         "2016q-web-i_got_id",
+        "2017q-web-notmycupofcoffe",
         "2017q-web-orange",
         "2017q-web-orangev2",
         "2019f-web-biometric",
