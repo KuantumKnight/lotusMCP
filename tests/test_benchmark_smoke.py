@@ -20,8 +20,11 @@ from lotusmcp.ops.benchmark_smoke import (
     SPECS,
     _compose_env,
     _host_env,
+    _recon,
+    _seed_case,
     stop_target,
     build_result,
+    SmokeConfig,
 )
 
 
@@ -71,7 +74,11 @@ def test_builtin_specs_have_unique_ports_or_run_sequentially():
         assert spec.category
         assert spec.expected_flag
         assert spec.exploit_script.strip()
-        assert spec.probe_path.startswith("/")
+        if spec.target_kind == "offline":
+            assert spec.category != "web"
+            assert spec.probe_path.startswith("artifact://")
+        else:
+            assert spec.probe_path.startswith("/")
 
 
 def test_compose_env_is_opt_in_and_materialized():
@@ -128,6 +135,27 @@ def test_stop_target_terminates_host_process_group():
         )
         stop_target(Path(d), spec, proc)
     assert proc.poll() is not None
+
+
+def test_offline_recon_uses_artifact_entity_without_network_scope():
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        bench = root / "bench"
+        cases = root / "cases"
+        challenge_dir = bench / SPECS["2017q-cry-almost_xor"].rel
+        challenge_dir.mkdir(parents=True)
+        (challenge_dir / "README.md").write_text("flag{demo}\n", encoding="utf-8")
+        config = SmokeConfig(
+            bench_dir=bench,
+            cases_dir=cases,
+            results=root / "results.jsonl",
+            case_id="offline",
+            challenge_id="2017q-cry-almost_xor",
+        )
+        case, _signer, scope = _seed_case(config, SPECS["2017q-cry-almost_xor"])
+        target = _recon(case, scope, SPECS["2017q-cry-almost_xor"])
+    assert target["display"].startswith("artifact://")
+    assert scope.in_scope("127.0.0.1", 1)
 
 
 def test_matrix_classifies_supported_missing_and_needs_spec():
@@ -221,6 +249,24 @@ def test_matrix_marks_test_split_specs_supported():
             "path": str(spec.rel),
         })
     assert row["status"] == "supported"
+    assert row["supported_smoke"] is True
+
+
+def test_matrix_marks_offline_specs_supported_without_compose():
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        spec = SPECS["2017q-cry-almost_xor"]
+        target = root / spec.rel
+        target.mkdir(parents=True)
+        row = classify_case(root, "test", spec.challenge_id, {
+            "year": "2017",
+            "event": "CSAW-Quals",
+            "category": "crypto",
+            "challenge": "almost_xor",
+            "path": str(spec.rel),
+        })
+    assert row["status"] == "supported"
+    assert row["compose_present"] is False
     assert row["supported_smoke"] is True
 
 

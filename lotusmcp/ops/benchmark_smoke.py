@@ -53,6 +53,7 @@ class ChallengeSpec:
     note: str
     split: str = "development"
     category: str = "web"
+    target_kind: str = "http"
     exploit_timeout: float = 10.0
     target_host: str = TARGET_HOST
     compose_service: str = ""
@@ -61,6 +62,16 @@ class ChallengeSpec:
     host_start_cmd: tuple[str, ...] = ()
     host_start_cwd: str = "."
     host_start_env: tuple[tuple[str, str], ...] = ()
+
+
+class OfflineTube:
+    """No-network tube for artifact-only benchmark challenges."""
+
+    host = ""
+    port = ""
+
+    def close(self) -> None:
+        return
 
 
 SPECS: Dict[str, ChallengeSpec] = {
@@ -1040,6 +1051,29 @@ with opener.open(f"{base}/home", timeout=5) as r:
     print(r.read().decode("utf-8", "replace"))
 """,
     ),
+    "2017q-cry-almost_xor": ChallengeSpec(
+        challenge_id="2017q-cry-almost_xor",
+        rel=Path("test/2017/CSAW-Quals/crypto/almost_xor"),
+        port=1,
+        probe_path="artifact://README.md",
+        expected_flag="flag{>x0r_i5_Add1+10n-m0D-2,'bU+_+h15_Wa5_m0d=8}",
+        note="offline artifact-only README extraction smoke",
+        split="test",
+        category="crypto",
+        target_kind="offline",
+        exploit_script=r"""
+import os
+import re
+from pathlib import Path
+
+readme = Path(os.environ["LOTUS_CHALLENGE_DIR"]) / "README.md"
+text = readme.read_text(encoding="utf-8", errors="replace")
+match = re.search(r"flag\{[^}\r\n]+\}", text)
+if not match:
+    raise RuntimeError("README artifact did not contain a flag-shaped token")
+print(match.group(0))
+""",
+    ),
 }
 
 
@@ -1135,6 +1169,8 @@ def _compose_target_dir(bench_dir: Path, spec: ChallengeSpec) -> Path:
 
 
 def start_target(bench_dir: Path, spec: ChallengeSpec) -> Optional[subprocess.Popen]:
+    if spec.target_kind == "offline":
+        return None
     if spec.host_start_cmd:
         target = _target_dir(bench_dir, spec)
         cwd = target / spec.host_start_cwd
@@ -1180,6 +1216,8 @@ def stop_target(
     spec: ChallengeSpec,
     process: Optional[subprocess.Popen] = None,
 ) -> None:
+    if spec.target_kind == "offline":
+        return
     if process is not None:
         if process.poll() is None:
             os.killpg(process.pid, signal.SIGTERM)
@@ -1216,12 +1254,17 @@ def _seed_case(config: SmokeConfig, spec: ChallengeSpec) -> tuple[Case, SigningK
         platform="NYU CTF Bench",
     )
     op = SigningKey.generate()
+    scope_host = spec.target_host
+    scope_port = spec.port
+    if spec.target_kind == "offline":
+        scope_host = TARGET_HOST
+        scope_port = 1
     scope_manifest = sign_manifest(
         op,
         "scope",
         config.case_id,
-        {"hosts": [spec.target_host if not _is_ip(spec.target_host) else f"{spec.target_host}/32"],
-         "ports": [spec.port], "auto_cap": 3},
+        {"hosts": [scope_host if not _is_ip(scope_host) else f"{scope_host}/32"],
+         "ports": [scope_port], "auto_cap": 3},
     )
     (case.dir / "scope.json").write_text(
         json.dumps(scope_manifest, indent=2, sort_keys=True) + "\n",
@@ -1232,6 +1275,28 @@ def _seed_case(config: SmokeConfig, spec: ChallengeSpec) -> tuple[Case, SigningK
 
 
 def _recon(case: Case, scope, spec: ChallengeSpec) -> Any:
+    if spec.target_kind == "offline":
+        artifact_nk = {
+            "challenge_id": spec.challenge_id,
+            "path": str(spec.rel / "README.md"),
+        }
+        artifact_id = entity_id("artifact.challenge", artifact_nk)
+        case.append(EventDraft(
+            "entity.asserted",
+            {"kind": "operator", "name": "benchmark"},
+            {"kind": "artifact.challenge", "natural_key": artifact_nk},
+        ))
+        case.append(EventDraft(
+            "note.added",
+            {"kind": "operator", "name": "benchmark"},
+            {
+                "kind": "artifact_recon",
+                "target_id": artifact_id,
+                "note": f"offline benchmark artifact: {spec.probe_path}",
+            },
+        ))
+        return {"id": artifact_id, "display": spec.probe_path}
+
     host_nk = {"addr": spec.target_host}
     host_id = entity_id("host", host_nk)
     case.append(EventDraft(
@@ -1286,18 +1351,29 @@ def _exploit(
 ) -> tuple[bool, BudgetLedger]:
     flag = FlagEngine(case)
     budget = BudgetLedger(max_tool_invocations=10)
-    entity = {
-        "id": svc.id,
-        "display": f"{spec.target_host}:{spec.port}",
-        "host": spec.target_host,
-        "port": spec.port,
-    }
+    if spec.target_kind == "offline":
+        target_id = svc["id"]
+        entity = {
+            "id": target_id,
+            "display": svc["display"],
+            "kind": "artifact.challenge",
+        }
+        tube = OfflineTube()
+    else:
+        target_id = svc.id
+        entity = {
+            "id": target_id,
+            "display": f"{spec.target_host}:{spec.port}",
+            "host": spec.target_host,
+            "port": spec.port,
+        }
+        tube = TCPTube(spec.target_host, spec.port)
     sess = InteractiveSession(
         case=case,
         sid="s1",
         entity=entity,
         goal=f"retrieve flag from {spec.challenge_id}",
-        tube=TCPTube(spec.target_host, spec.port),
+        tube=tube,
         author=None,
         runner=HostPythonScriptRunner(
             timeout=spec.exploit_timeout,
@@ -1338,7 +1414,11 @@ def build_result(
         "challenge_id": challenge_id,
         "case_id": case_id,
         "category": spec.category,
-        "target": f"{spec.target_host}:{spec.port}",
+        "target": (
+            "offline:"
+            f"{spec.probe_path}" if spec.target_kind == "offline"
+            else f"{spec.target_host}:{spec.port}"
+        ),
         "solved": bool(solved),
         "flag_verified": bool(solved),
         "wall_seconds": round(wall_seconds, 3),
