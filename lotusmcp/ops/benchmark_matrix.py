@@ -80,6 +80,7 @@ def classify_case(bench_dir: Path, split: str, challenge_id: str,
         and challenge_id in SPECS
         and SPECS[challenge_id].split == split
     )
+    smoke_quality = SPECS[challenge_id].smoke_quality if supported_smoke else ""
     if supported_smoke:
         status = "supported"
     elif not checkout_present:
@@ -100,6 +101,7 @@ def classify_case(bench_dir: Path, split: str, challenge_id: str,
         "checkout_present": checkout_present,
         "compose_present": compose_present,
         "supported_smoke": supported_smoke,
+        "smoke_quality": smoke_quality,
         "status": status,
     }
 
@@ -107,14 +109,21 @@ def classify_case(bench_dir: Path, split: str, challenge_id: str,
 def summarize(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     by_status: Dict[str, int] = {}
     by_category: Dict[str, int] = {}
+    by_smoke_quality: Dict[str, int] = {}
     for row in rows:
         by_status[row["status"]] = by_status.get(row["status"], 0) + 1
         category = str(row.get("category"))
         by_category[category] = by_category.get(category, 0) + 1
+        smoke_quality = row.get("smoke_quality")
+        if smoke_quality:
+            by_smoke_quality[str(smoke_quality)] = (
+                by_smoke_quality.get(str(smoke_quality), 0) + 1
+            )
     return {
         "total": len(rows),
         "by_status": dict(sorted(by_status.items())),
         "by_category": dict(sorted(by_category.items())),
+        "by_smoke_quality": dict(sorted(by_smoke_quality.items())),
         "supported": sum(1 for row in rows if row["supported_smoke"]),
         "checked_out": sum(1 for row in rows if row["checkout_present"]),
         "dockerized": sum(1 for row in rows if row["compose_present"]),

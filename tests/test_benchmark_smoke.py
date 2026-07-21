@@ -46,6 +46,7 @@ def test_aggregate_result_omits_raw_flag():
     text = repr(result)
     assert result["benchmark"] == "nyu-ctf-bench"
     assert result["solved"] is True and result["flag_verified"] is True
+    assert result["smoke_quality"] == "live_service"
     assert "audit_anchor" in result and result["chain_ok"] is True
     assert all(spec.expected_flag not in text for spec in SPECS.values())
 
@@ -78,8 +79,12 @@ def test_builtin_specs_have_unique_ports_or_run_sequentially():
         if spec.target_kind == "offline":
             assert spec.category != "web"
             assert spec.probe_path.startswith("artifact://")
+            assert spec.smoke_quality == "offline_artifact"
+        elif spec.host_start_cmd:
+            assert spec.smoke_quality == "host_managed"
         else:
             assert spec.probe_path.startswith("/")
+            assert spec.smoke_quality == "live_service"
 
 
 def test_compose_env_is_opt_in_and_materialized():
@@ -207,6 +212,7 @@ def test_matrix_classifies_supported_missing_and_needs_spec():
     assert summary["total"] == 3
     assert summary["supported"] == 1
     assert summary["checked_out"] == 2
+    assert summary["by_smoke_quality"] == {"live_service": 1}
 
 
 def test_matrix_iter_entries_filters_before_limit():
@@ -261,6 +267,7 @@ def test_matrix_marks_test_split_specs_supported():
         })
     assert row["status"] == "supported"
     assert row["supported_smoke"] is True
+    assert row["smoke_quality"] == "live_service"
 
 
 def test_matrix_marks_offline_specs_supported_without_compose():
@@ -279,6 +286,7 @@ def test_matrix_marks_offline_specs_supported_without_compose():
     assert row["status"] == "supported"
     assert row["compose_present"] is False
     assert row["supported_smoke"] is True
+    assert row["smoke_quality"] == "offline_artifact"
 
 
 if __name__ == "__main__":

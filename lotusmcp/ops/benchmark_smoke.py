@@ -63,6 +63,14 @@ class ChallengeSpec:
     host_start_cwd: str = "."
     host_start_env: tuple[tuple[str, str], ...] = ()
 
+    @property
+    def smoke_quality(self) -> str:
+        if self.target_kind == "offline":
+            return "offline_artifact"
+        if self.host_start_cmd:
+            return "host_managed"
+        return "live_service"
+
 
 class OfflineTube:
     """No-network tube for artifact-only benchmark challenges."""
@@ -1543,6 +1551,7 @@ def build_result(
         "challenge_id": challenge_id,
         "case_id": case_id,
         "category": spec.category,
+        "smoke_quality": spec.smoke_quality,
         "target": (
             "offline:"
             f"{spec.probe_path}" if spec.target_kind == "offline"
