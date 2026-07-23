@@ -1552,6 +1552,7 @@ def build_result(
         "case_id": case_id,
         "category": spec.category,
         "smoke_quality": spec.smoke_quality,
+        "execution_backed": spec.smoke_quality != "offline_artifact",
         "target": (
             "offline:"
             f"{spec.probe_path}" if spec.target_kind == "offline"

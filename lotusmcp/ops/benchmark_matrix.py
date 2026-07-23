@@ -81,6 +81,9 @@ def classify_case(bench_dir: Path, split: str, challenge_id: str,
         and SPECS[challenge_id].split == split
     )
     smoke_quality = SPECS[challenge_id].smoke_quality if supported_smoke else ""
+    execution_backed = bool(
+        supported_smoke and smoke_quality in {"live_service", "host_managed"}
+    )
     if supported_smoke:
         status = "supported"
     elif not checkout_present:
@@ -102,6 +105,7 @@ def classify_case(bench_dir: Path, split: str, challenge_id: str,
         "compose_present": compose_present,
         "supported_smoke": supported_smoke,
         "smoke_quality": smoke_quality,
+        "execution_backed": execution_backed,
         "status": status,
     }
 
@@ -119,12 +123,18 @@ def summarize(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
             by_smoke_quality[str(smoke_quality)] = (
                 by_smoke_quality.get(str(smoke_quality), 0) + 1
             )
+    supported = sum(1 for row in rows if row["supported_smoke"])
+    execution_backed_supported = sum(1 for row in rows if row.get("execution_backed"))
+    offline_artifact_supported = by_smoke_quality.get("offline_artifact", 0)
     return {
         "total": len(rows),
         "by_status": dict(sorted(by_status.items())),
         "by_category": dict(sorted(by_category.items())),
         "by_smoke_quality": dict(sorted(by_smoke_quality.items())),
-        "supported": sum(1 for row in rows if row["supported_smoke"]),
+        "supported": supported,
+        "execution_backed_supported": execution_backed_supported,
+        "offline_artifact_supported": offline_artifact_supported,
+        "readiness_gap": len(rows) - supported,
         "checked_out": sum(1 for row in rows if row["checkout_present"]),
         "dockerized": sum(1 for row in rows if row["compose_present"]),
     }

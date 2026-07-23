@@ -47,6 +47,7 @@ def test_aggregate_result_omits_raw_flag():
     assert result["benchmark"] == "nyu-ctf-bench"
     assert result["solved"] is True and result["flag_verified"] is True
     assert result["smoke_quality"] == "live_service"
+    assert result["execution_backed"] is True
     assert "audit_anchor" in result and result["chain_ok"] is True
     assert all(spec.expected_flag not in text for spec in SPECS.values())
 
@@ -211,6 +212,9 @@ def test_matrix_classifies_supported_missing_and_needs_spec():
     summary = summarize(rows)
     assert summary["total"] == 3
     assert summary["supported"] == 1
+    assert summary["execution_backed_supported"] == 1
+    assert summary["offline_artifact_supported"] == 0
+    assert summary["readiness_gap"] == 2
     assert summary["checked_out"] == 2
     assert summary["by_smoke_quality"] == {"live_service": 1}
 
@@ -268,6 +272,7 @@ def test_matrix_marks_test_split_specs_supported():
     assert row["status"] == "supported"
     assert row["supported_smoke"] is True
     assert row["smoke_quality"] == "live_service"
+    assert row["execution_backed"] is True
 
 
 def test_matrix_marks_offline_specs_supported_without_compose():
@@ -287,6 +292,7 @@ def test_matrix_marks_offline_specs_supported_without_compose():
     assert row["compose_present"] is False
     assert row["supported_smoke"] is True
     assert row["smoke_quality"] == "offline_artifact"
+    assert row["execution_backed"] is False
 
 
 if __name__ == "__main__":

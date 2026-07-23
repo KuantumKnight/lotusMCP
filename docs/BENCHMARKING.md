@@ -108,6 +108,16 @@ PYTHONPATH=. python -m lotusmcp.ops.benchmark_matrix \
   --results /tmp/lotus_bench_results.jsonl
 ```
 
+Read the matrix summary by quality tier, not just by raw `supported` count:
+
+- `execution_backed_supported` counts verified live-service and host-managed
+  smokes. Use this as the stronger number for runtime benchmark capability.
+- `offline_artifact_supported` counts artifact-only smokes. These validate
+  LotusMCP's case/event/flag/audit pipeline for sparse non-web artifacts, but
+  they are not equivalent to exploiting a running challenge service.
+- `readiness_gap` is the remaining unsupported or unavailable portion of the
+  requested inventory.
+
 CTF-Dojo can also be inventoried after cloning its repository. Its public
 manifest contains 658 entries; execution requires generating or checking out the
 challenge runtime archive described by CTF-Dojo.
@@ -148,6 +158,8 @@ Store benchmark results outside case logs, for example in
   "challenge_id": "2021f-rev-maze",
   "case_id": "nyu-dev-2021f-rev-maze",
   "category": "rev",
+  "smoke_quality": "live_service",
+  "execution_backed": true,
   "target": "127.0.0.1:8080",
   "solved": true,
   "flag_verified": true,
