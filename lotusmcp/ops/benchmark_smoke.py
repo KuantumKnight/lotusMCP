@@ -1206,6 +1206,18 @@ with opener.open(f"{base}/home", timeout=5) as r:
         target_kind="offline",
         exploit_script=OFFLINE_README_FLAG_SCRIPT,
     ),
+    "2023f-cry-textbook_rsa": ChallengeSpec(
+        challenge_id="2023f-cry-textbook_rsa",
+        rel=Path("test/2023/CSAW-Finals/crypto/Textbook-RSA"),
+        port=1,
+        probe_path="artifact://solver/README.md",
+        expected_flag="csawctf{D0n't_us3_t3xtb00k_RsA1t_w1tH_N0_apPr0pr1at3_pAdd1n6}",
+        note="offline artifact-only solver README extraction smoke",
+        split="test",
+        category="crypto",
+        target_kind="offline",
+        exploit_script=OFFLINE_README_FLAG_SCRIPT,
+    ),
 }
 
 
